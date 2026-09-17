@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+  <title>광남고 스쿨포털</title>
+  <link rel="icon" href="favicon.png" type="image/png">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="icon_192.png">
+  <meta name="theme-color" content="#4285f4">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css?v=1">
+
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
+</head>
+<body>
+  <!-- 첫 로딩 -->
+  <div id="bootView" class="boot">
+    <div class="spinner"></div>
+  </div>
+
+  <!-- 로그인 -->
+  <section id="loginView" class="login-wrap" hidden>
+    <div class="login-card">
+      <div class="login-brand">ⓒ JEONGKAPSU</div>
+      <div class="login-logo">🏫</div>
+      <h1 id="loginTitle">광남고 스쿨포털</h1>
+      <p class="login-sub">학생은 학번, 선생님은 부여받은 ID로 로그인하세요.</p>
+      <form id="loginForm" autocomplete="on">
+        <input type="text" id="loginId" placeholder="학번 또는 교사 ID" autocomplete="username" autocapitalize="off" required>
+        <input type="password" id="loginPw" placeholder="비밀번호" autocomplete="current-password" required>
+        <button type="submit" id="loginBtn" class="btn primary block">로그인</button>
+      </form>
+      <p class="login-help">비밀번호를 잊었다면 담임 또는 담당 선생님께 초기화를 요청하세요.</p>
+    </div>
+  </section>
+
+  <!-- 앱 -->
+  <section id="appView" hidden>
+    <header class="topbar">
+      <button id="backBtn" class="icon-btn" aria-label="뒤로" hidden>
+        <svg viewBox="0 0 24 24"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>
+      </button>
+      <div id="pageTitle" class="page-title"></div>
+      <div class="user-chip" id="userChip" role="button" tabindex="0">
+        <span id="userName"></span>
+        <span id="userRole" class="role-badge"></span>
+      </div>
+    </header>
+    <main id="main"></main>
+  </section>
+
+  <div id="toast" class="toast"></div>
+  <div id="loadingOverlay" class="loading-overlay">
+    <div class="spinner"></div>
+    <div id="loadingText">처리 중...</div>
+  </div>
+
+  <script type="module" src="js/app.js?v=1"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('sw.js').catch(() => {});
+    }
+  </script>
+</body>
+</html>

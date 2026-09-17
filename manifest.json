@@ -1,0 +1,14 @@
+{
+  "name": "광남고 스쿨포털",
+  "short_name": "스쿨포털",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f4f6f8",
+  "theme_color": "#4285f4",
+  "icons": [
+    { "src": "icon_192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon_512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
