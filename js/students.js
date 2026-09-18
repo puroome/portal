@@ -3,9 +3,9 @@ import { isTeacher } from "./auth.js";
 import { CATEGORIES, ATT_TYPES, ATT_STATUS } from "./config.js";
 import { $, $$, esc, emptyState, sidCompare } from "./ui.js";
 import { setTitle, go } from "./nav.js";
-import { getStudents, filterStudents, gradeOptions, classOptions } from "./directory.js";
-import { loadAllPrograms, loadStudentSubs, renderSubmissionList, canView } from "./programs.js";
-import { loadStudentAttendance, scheduleText } from "./attendance.js";
+import { getStudents, getStudentSids, filterStudents, gradeOptions, classOptions } from "./directory.js";
+import { loadAllPrograms, loadPersonSubs, renderSubmissionList, canView } from "./programs.js";
+import { loadStudentAttendance, cardSchedule } from "./attendance.js";
 
 export async function renderSearch(main, params, alive) {
   if (!isTeacher()) { go("#/home"); return; }
@@ -46,8 +46,10 @@ export async function renderProfile(main, { sid }, alive) {
   if (!isTeacher()) { go("#/home"); return; }
   setTitle("🧑‍🎓 학생 정보", "#/students");
   // 공통 프로그램 + 내가 담당하는 비공개 프로그램(교과·동아리)의 자료만
-  const [students, programsById, att] = await Promise.all([getStudents(), loadAllPrograms(), loadStudentAttendance(sid)]);
-  const subs = await loadStudentSubs(sid, Object.values(programsById).filter(canView));
+  // 지난 학년도 학번까지 모아서, 프로그램·반마다 그 해 학번으로 찾습니다.
+  const person = { sid, sids: await getStudentSids(sid) };
+  const [students, programsById, att] = await Promise.all([getStudents(), loadAllPrograms(), loadStudentAttendance(person)]);
+  const subs = await loadPersonSubs(person, Object.values(programsById).filter(canView));
   if (!alive()) return;
   const st = students.find(s => s.sid === sid) || { sid, name: subs[0]?.name || "" };
 
@@ -74,11 +76,11 @@ export async function renderProfile(main, { sid }, alive) {
 
       <div class="section-head"><h3>방과후·야간자율 출결</h3></div>
       <div class="card-list">
-        ${att.length ? att.map(({ group, counts, records }) => `
+        ${att.length ? att.map(({ group, counts, dates }) => `
           <a class="item-card" href="#/att/g/${group.id}">
-            <div class="item-top"><span class="badge type-${group.type}">${esc(ATT_TYPES[group.type]?.label || "")}</span><span class="item-meta">${esc(group.year)}학년도 · ${esc(scheduleText(group))}</span></div>
+            <div class="item-top"><span class="badge type-${group.type}">${esc(ATT_TYPES[group.type]?.label || "")}</span><span class="item-meta">${esc(group.year)}학년도 · ${esc(cardSchedule(group))}</span></div>
             <div class="item-title">${esc(group.name)}</div>
-            <div class="stat-line">${Object.entries(ATT_STATUS).map(([k, s]) => `<span>${s.label} <b>${counts[k]}</b></span>`).join("")}<span class="item-meta">기록 ${Object.keys(records).length}일</span></div>
+            <div class="stat-line">${Object.entries(ATT_STATUS).map(([k, s]) => `<span>${s.label} <b>${counts[k]}</b></span>`).join("")}<span class="item-meta">운영 ${dates.length}일</span></div>
           </a>`).join("") : emptyState("참여 중인 방과후·야간자율이 없습니다.")}
       </div>
     </div>`;

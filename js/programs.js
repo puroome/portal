@@ -6,12 +6,14 @@
 //   관리(수정·마감·삭제·교사 메모) : 프로그램을 만든 교사(createdByUid)만
 //   제출자료 열람                  : private 이면 만든 교사만, 아니면 모든 교사 (DB 보안 규칙으로도 강제)
 import { db, readVal, newKey, serverTime } from "./firebase.js";
-import { CATEGORIES } from "./config.js";
+import { CATEGORIES, CATEGORY_HAS_PERIOD, CLUB_SCHEDULE } from "./config.js";
 import { session, isTeacher } from "./auth.js";
 import { $, $$, esc, richText, toast, modal, confirmBox, loading, emptyState, dateKey, fmtDateTime, schoolYear, sidCompare, downloadCsv } from "./ui.js";
 import { setTitle, go } from "./nav.js";
 import { uploadFile, openFile, deleteFile, checkFileSize, formatSize } from "./drive.js";
 import { getStudents, gradeOptions, classOptions } from "./directory.js";
+import { memberPickerHtml, bindMemberPicker } from "./members.js";
+import { sidInYear, isCurrentYear, currentYearOf } from "./years.js";
 
 // ---------------- 데이터 ----------------
 async function loadPrograms(cat) {
@@ -54,6 +56,15 @@ async function loadProgramsSubs(programs) {
   return (await Promise.all(programs.map(p => loadProgramSubs(p.id)))).flat();
 }
 
+// 한 사람의 제출자료 — 프로그램마다 그 학년도에 쓰던 학번으로 찾습니다. person = { sid, sids }
+export async function loadPersonSubs(person, programs) {
+  const results = await Promise.all(programs.map(async p => {
+    const sid = sidInYear(person, p.year || schoolYear());
+    return sid ? flattenSubs(p.id, { [sid]: await readVal(subsPath(p.id, sid)) }) : [];
+  }));
+  return results.flat();
+}
+
 // 한 학생의 제출자료 — 주어진 프로그램들 안에서만 찾음
 export async function loadStudentSubs(sid, programs) {
   const results = await Promise.all(programs.map(async p =>
@@ -61,23 +72,46 @@ export async function loadStudentSubs(sid, programs) {
   return results.flat();
 }
 
+const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
+
 export function programStatus(p) {
   const today = dateKey();
   if (p.closed) return { key: "closed", label: "마감", open: false };
+  // 빛나다·동아리는 제출 기간 없이 그날 활동을 바로 기록합니다.
+  if (!CATEGORY_HAS_PERIOD[p.category]) return { key: "open", label: "진행중", open: true };
   if (p.startDate && today < p.startDate) return { key: "soon", label: "예정", open: false };
   if (p.endDate && today > p.endDate) return { key: "closed", label: "마감", open: false };
   return { key: "open", label: "진행중", open: true };
 }
 
+// 그 프로그램이 오늘 하는 활동인가 (빛나다는 요일, 동아리는 수요일 고정)
+export function runsToday(p) {
+  const today = new Date().getDay();
+  if (p.category === "club") return today === CLUB_SCHEDULE.day;
+  if (p.category === "bitnada") return !p.days || !!p.days[today];
+  return false;
+}
+
+function daysText(p) {
+  const list = Object.keys(p.days || {}).map(Number).sort();
+  return list.length ? list.map(d => WEEK[d] + "요일").join("·") : "요일 지정 없음";
+}
+
 function periodText(p) {
+  if (p.category === "club") return CLUB_SCHEDULE.label;
+  if (p.category === "bitnada") return daysText(p);
   if (!p.startDate && !p.endDate) return "상시";
   return `${p.startDate || ""} ~ ${p.endDate || ""}`;
 }
 
-function gradesText(p) {
+function targetText(p) {
+  if (p.members) return `학생 ${Object.keys(p.members).length}명`;
   const g = Object.keys(p.grades || {}).sort();
   return g.length ? g.map(x => x + "학년").join("·") : "전 학년";
 }
+
+// 예전 프로그램(명단 없이 학년으로 지정)도 계속 보이게 합니다.
+const isMember = (p, profile) => (p.members ? !!p.members[profile.sid] : (!p.grades || !!p.grades[profile.grade]));
 
 const statusBadge = p => { const s = programStatus(p); return `<span class="badge st-${s.key}">${s.label}</span>`; };
 // 교사 화면용: 내 담당 / 비공개 표시
@@ -96,14 +130,15 @@ export async function renderCategory(main, { cat }, alive) {
 async function renderStudentCategory(main, cat, alive) {
   const p = session.profile;
   const programs = await loadPrograms(cat);
-  const mySubs = await loadStudentSubs(p.sid, programs);
+  const mySubs = await loadPersonSubs(p, programs);
   if (!alive()) return;
   const counts = {};
   mySubs.forEach(s => { counts[s.programId] = (counts[s.programId] || 0) + 1; });
-  const year = schoolYear();
+  const year = currentYearOf(p, schoolYear());
   const visible = programs
-    .filter(pr => counts[pr.id] || (Number(pr.year) === year && (!pr.grades || pr.grades[p.grade])))
-    .sort((a, b) => Number(programStatus(b).open) - Number(programStatus(a).open) || byNewest(a, b));
+    .filter(pr => counts[pr.id] || (Number(pr.year) === year && isMember(pr, p)))
+    .sort((a, b) => Number(runsToday(b)) - Number(runsToday(a))
+      || Number(programStatus(b).open) - Number(programStatus(a).open) || byNewest(a, b));
 
   main.innerHTML = `
     <div class="page">
@@ -111,7 +146,7 @@ async function renderStudentCategory(main, cat, alive) {
       <div class="card-list">
         ${visible.length ? visible.map(pr => `
           <a class="item-card" href="#/prog/${pr.id}">
-            <div class="item-top">${statusBadge(pr)}<span class="item-meta">${esc(periodText(pr))}</span></div>
+            <div class="item-top">${Number(pr.year) === year ? statusBadge(pr) : `<span class="badge st-closed">${esc(pr.year)}학년도</span>`}${Number(pr.year) === year && runsToday(pr) ? '<span class="badge st-open">오늘</span>' : ""}<span class="item-meta">${esc(periodText(pr))}</span></div>
             <div class="item-title">${esc(pr.title)}</div>
             <div class="item-meta">${counts[pr.id] ? `✅ 내 제출 ${counts[pr.id]}건` : "아직 제출하지 않았어요"}</div>
           </a>`).join("") : emptyState("현재 참여할 수 있는 프로그램이 없습니다.")}
@@ -200,7 +235,7 @@ async function renderTeacherCategory(main, cat, alive) {
       <div class="card-list">
         ${list.length ? list.map(p => `
           <a class="item-card" href="#/prog/${p.id}">
-            <div class="item-top">${statusBadge(p)}${accessBadge(p)}<span class="item-meta">${esc(p.year)}학년도 · ${esc(gradesText(p))} · ${esc(periodText(p))}</span></div>
+            <div class="item-top">${statusBadge(p)}${accessBadge(p)}<span class="item-meta">${esc(p.year)}학년도 · ${esc(targetText(p))} · ${esc(periodText(p))}</span></div>
             <div class="item-title">${esc(p.title)}</div>
             <div class="item-meta">제출 ${counts[p.id] || 0}건 · 담당 ${esc(p.createdBy || "")}</div>
           </a>`).join("") : emptyState("볼 수 있는 프로그램이 없습니다. [+ 새 프로그램]으로 만들어 주세요.")}
@@ -284,7 +319,8 @@ function exportCsv(subs, programsById, filename) {
 // ---------------- 프로그램 등록/수정 (교사) ----------------
 function programDialog(p) {
   let savedId = null;
-  const g = p.grades || {};
+  let picker = null;
+  const hasPeriod = !!CATEGORY_HAS_PERIOD[p.category];
   return modal({
     title: p.id ? "프로그램 수정" : `새 프로그램 · ${CATEGORIES[p.category].label}`,
     wide: true,
@@ -293,32 +329,41 @@ function programDialog(p) {
       <label class="field"><span>안내 (학생에게 보이는 설명·제출 방법)</span><textarea id="pgDesc" rows="5" placeholder="활동 내용, 제출해야 할 자료, 유의사항 등">${esc(p.description || "")}</textarea></label>
       <div class="field-row">
         <label class="field"><span>학년도</span><input id="pgYear" type="number" value="${esc(p.year || schoolYear())}"></label>
-        <div class="field"><span>대상 학년 (선택 안 하면 전 학년)</span>
-          <div class="checks">${[1, 2, 3].map(n => `<label><input type="checkbox" class="pgGrade" value="${n}" ${g[n] ? "checked" : ""}> ${n}학년</label>`).join("")}</div>
-        </div>
+        ${p.category === "bitnada" ? `
+          <div class="field"><span>활동 요일 (선택 안 하면 매일)</span>
+            <div class="checks">${[1, 2, 3, 4, 5].map(n => `<label><input type="checkbox" class="pgDay" value="${n}" ${p.days?.[n] ? "checked" : ""}> ${WEEK[n]}</label>`).join("")}</div>
+          </div>` : `<div class="field"><span>활동 시간</span><p class="item-meta">${esc(periodText({ ...p, startDate: null, endDate: null }))}</p></div>`}
       </div>
-      <div class="field-row">
-        <label class="field"><span>제출 시작일</span><input id="pgStart" type="date" value="${esc(p.startDate || "")}"></label>
-        <label class="field"><span>제출 마감일</span><input id="pgEnd" type="date" value="${esc(p.endDate || "")}"></label>
-      </div>
+      ${hasPeriod ? `
+        <div class="field-row">
+          <label class="field"><span>제출 시작일</span><input id="pgStart" type="date" value="${esc(p.startDate || "")}"></label>
+          <label class="field"><span>제출 마감일</span><input id="pgEnd" type="date" value="${esc(p.endDate || "")}"></label>
+        </div>` : `<p class="item-meta">${esc(CATEGORIES[p.category].label)}는 제출 기간 없이, 활동한 날 바로 기록합니다.</p>`}
+      ${memberPickerHtml("참여 학생 명단")}
       <label class="check-line"><input type="checkbox" id="pgFiles" ${p.allowFiles !== false ? "checked" : ""}> 파일 첨부 허용</label>
       <label class="check-line"><input type="checkbox" id="pgPrivate" ${p.private ? "checked" : ""}> 🔒 제출자료 열람도 담당 교사(나)만</label>
       <p class="item-meta">체크하지 않으면 모든 교사가 제출자료를 볼 수 있습니다. 수정·마감·삭제·교사 메모는 항상 담당 교사만 할 수 있습니다.</p>`,
     okText: "저장",
     cancelText: "취소",
+    // 동아리는 반에서 몇 명만 참여하므로 반을 골라도 꺼진 상태로 시작합니다.
+    onOpen: async box => { picker = await bindMemberPicker(box, p.members, { defaultOn: p.category !== "club" }); },
     beforeOk: async box => {
       const title = $("#pgTitle", box).value.trim();
       if (!title) throw new Error("프로그램명을 입력하세요.");
-      const start = $("#pgStart", box).value, end = $("#pgEnd", box).value;
+      const start = $("#pgStart", box)?.value || "", end = $("#pgEnd", box)?.value || "";
       if (start && end && start > end) throw new Error("마감일이 시작일보다 빠릅니다.");
-      const grades = {};
-      $$(".pgGrade", box).forEach(c => { if (c.checked) grades[c.value] = true; });
+      const members = picker.get();
+      if (!members) throw new Error("참여 학생을 한 명 이상 선택하세요.");
+      const days = {};
+      $$(".pgDay", box).forEach(c => { if (c.checked) days[c.value] = true; });
       const data = {
         category: p.category,
         year: Number($("#pgYear", box).value) || schoolYear(),
         title,
         description: $("#pgDesc", box).value.trim(),
-        grades: Object.keys(grades).length ? grades : null,
+        members,
+        grades: null,
+        days: Object.keys(days).length ? days : null,
         startDate: start || null,
         endDate: end || null,
         allowFiles: $("#pgFiles", box).checked,
@@ -351,21 +396,24 @@ export async function renderProgram(main, { pid }, alive) {
 
   const infoHtml = `
     <div class="info-card">
-      <div class="item-top">${statusBadge(program)}${isTeacher() ? accessBadge(program) : ""}<span class="item-meta">${esc(program.year)}학년도 · ${esc(gradesText(program))}</span></div>
+      <div class="item-top">${!isTeacher() && !isCurrentYear(session.profile, program.year || schoolYear(), schoolYear())
+        ? `<span class="badge st-closed">지난 학년도</span>` : statusBadge(program)}${isTeacher() ? accessBadge(program) : ""}<span class="item-meta">${esc(program.year)}학년도 · ${esc(targetText(program))}</span></div>
       <h2 class="info-title">${esc(program.title)}</h2>
       <div class="info-meta">제출 기간: ${esc(periodText(program))} · 담당: ${esc(program.createdBy || "")}</div>
       ${program.description ? `<div class="info-desc">${richText(program.description)}</div>` : ""}
     </div>`;
 
   if (!isTeacher()) {
-    const mine = (await loadStudentSubs(session.profile.sid, [program])).sort(byNewest);
+    const mine = (await loadPersonSubs(session.profile, [program])).sort(byNewest);
+    const thisYear = isCurrentYear(session.profile, program.year || schoolYear(), schoolYear());
     if (!alive()) return;
     main.innerHTML = `
       <div class="page">
         ${infoHtml}
         <div class="section-head">
           <h3>내 제출 자료 (${mine.length})</h3>
-          ${st.open ? `<a class="btn primary small" href="#/submit/${pid}">+ 자료 올리기</a>` : `<span class="item-meta">${st.key === "soon" ? "제출 기간 전입니다" : "제출이 마감되었습니다"}</span>`}
+          ${!thisYear ? `<span class="item-meta">지난 학년도 프로그램 (보기만 가능)</span>`
+            : st.open ? `<a class="btn primary small" href="#/submit/${pid}">+ 자료 올리기</a>` : `<span class="item-meta">${st.key === "soon" ? "제출 기간 전입니다" : "제출이 마감되었습니다"}</span>`}
         </div>
         <div class="card-list">
           ${mine.length ? mine.map(s => `
@@ -444,6 +492,7 @@ export async function renderSubmitForm(main, { pid, subId }, alive) {
   if (!program) { main.innerHTML = emptyState("프로그램을 찾을 수 없습니다."); return; }
   const cat = CATEGORIES[program.category];
   setTitle(subId ? "자료 수정" : "자료 올리기", `#/prog/${pid}`);
+  if (!isCurrentYear(p, program.year || schoolYear(), schoolYear())) { main.innerHTML = emptyState("지난 학년도 프로그램에는 제출할 수 없습니다."); return; }
   if (!programStatus(program).open) { main.innerHTML = emptyState("제출 기간이 아닙니다."); return; }
   if (subId && !existing) { main.innerHTML = emptyState("자료를 찾을 수 없습니다."); return; }
 
@@ -545,7 +594,8 @@ export async function renderSubmission(main, { pid, sid, subId }, alive) {
   if (!s) { main.innerHTML = emptyState("자료를 찾을 수 없습니다."); return; }
   const owner = isOwner(program);
   const cat = CATEGORIES[s.category] || { icon: "", label: "" };
-  const canEdit = !teacher && program.category && programStatus(program).open;
+  const canEdit = !teacher && program.category && programStatus(program).open
+    && sid === String(session.profile.sid) && isCurrentYear(session.profile, program.year || schoolYear(), schoolYear());
   setTitle(`${cat.icon} 제출 자료`, `#/prog/${s.programId}`);
 
   main.innerHTML = `

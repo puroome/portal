@@ -1,587 +1,612 @@
-// 출석 모듈: 방과후 · 야간자율 (학생 체크인 + 교사 확인)
+// 출석 모듈: 방과후 · 야간자율
 // 데이터 구조
-//   portal/att/groups/{gid}                 : { type, year, name, place, days{1:true}, startTime, endTime, members{sid:true}, active, createdBy, createdAt }
-//   portal/att/codes/{gid}/{date}           : { code, expiresAt, createdBy }            ← 교사만 읽기 가능
-//   portal/att/records/{gid}/{sid}/{date}   : { status, at, by:'student'|'teacher', code, note, updatedBy, updatedAt }
+//   portal/att/groups/{gid}                 : { type, year, name, place, slots{요일:{교시:true}}, members{sid:true}, active, createdBy, createdByUid, createdAt }
+//   portal/att/sessions/{gid}/{date}        : { uid, name, at }         ← 그날 감독교사(확인된 날만 통계에 잡힘)
+//   portal/att/codes/{gid}/{date}           : { code, expiresAt }       ← 교사만 읽기
+//   portal/att/records/{gid}/{sid}/{date}   : { status, at, by, code, note }
+// 권한
+//   방과후 : 반을 등록한 교사만 편집·출석체크    야간자율 : 모든 교사가 편집·출석체크
+//   기록이 없는 학생은 '결석' 으로 봅니다.
 import { db, readVal, newKey, serverTime, serverNow } from "./firebase.js";
-import { ATT_TYPES, ATT_STATUS, CHECKIN_CODE_MINUTES, LATE_AFTER_MINUTES } from "./config.js";
+import { ATT_TYPES, ATT_PERIODS, ATT_DAY_PERIODS, ATT_STATUS, CHECKIN_CODE_MINUTES, LATE_AFTER_MINUTES, NIGHT_CLASS } from "./config.js";
 import { session, isTeacher } from "./auth.js";
-import { $, $$, esc, toast, modal, confirmBox, emptyState, dateKey, fmtDateKey, fmtTime, schoolYear, sidCompare, downloadCsv } from "./ui.js";
+import { $, $$, esc, toast, modal, confirmBox, alertBox, emptyState, dateKey, fmtDateKey, fmtTime, schoolYear, sidCompare, downloadCsv } from "./ui.js";
 import { setTitle, go, onLeave } from "./nav.js";
-import { getStudents, getStudentMap, gradeOptions, classOptions } from "./directory.js";
+import { getStudentMap } from "./directory.js";
+import { memberPickerHtml, bindMemberPicker } from "./members.js";
+import { sidInYear, isCurrentYear } from "./years.js";
+import { WEEK, periodsOn, runsOn, scheduleText, isLate, effectiveStatus, countStatuses, sessionDates,
+         nightSlots, nightPeriods, nightGroupName, groupPeriodKey } from "./att-schedule.js";
 
-const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
+const TAB_KEY = "att_tab";
+const NIGHT_GRADES = ["1", "2", "3"];
 
-// ---------------- 공통 ----------------
+// 야간자율 카드에는 요일만 짧게 (교시는 묶음 제목에 있음)
+const daysText = g => Object.keys(g.slots || {}).map(Number).sort().map(d => WEEK[d]).join("·");
+const cardTitle = g => (g.type === "night" && g.grade ? `${g.grade}학년` : g.name);
+const cardSchedule = g => (g.type === "night" ? [daysText(g), g.place].filter(Boolean).join(" · ") : scheduleText(g));
+
+// 방과후는 등록한 교사만, 야간자율은 모든 교사가 다룹니다.
+// 예전에 만들어 등록 교사(uid)가 없는 반은 주인이 없으므로 아무 교사나 고치고 지울 수 있습니다.
+export const isOwnerless = g => !g?.createdByUid;
+export const canManage = g => isTeacher() && (g.type === "night" || isOwnerless(g) || g.createdByUid === session.profile.uid);
+
+function statusChip(key) {
+  const s = ATT_STATUS[key] || ATT_STATUS.absent;
+  return `<span class="st-chip" style="--c:${s.color}">${s.label}</span>`;
+}
+
+// 쓰기가 막히면 조용히 끝나지 않도록 이유를 보여 줍니다.
+async function guard(what, run) {
+  try {
+    await run();
+    return true;
+  } catch (err) {
+    console.error(`[출석] ${what} 실패:`, err);
+    const denied = String(err?.code || err?.message || "").toLowerCase().includes("permission");
+    toast(denied
+      ? `${what} 권한이 없습니다. Firebase 보안 규칙을 새 것으로 게시했는지 확인하세요.`
+      : `${what} 실패: ${err?.message || err}`);
+    return false;
+  }
+}
+
+// ---------------- 데이터 ----------------
 async function loadGroups() {
   const obj = (await readVal("portal/att/groups")) || {};
   return Object.entries(obj).map(([id, g]) => ({ ...g, id }));
 }
 
-function scheduleText(g) {
-  const days = Object.keys(g.days || {}).map(Number).sort().map(d => WEEK[d]).join("·");
-  return [days, g.startTime && `${g.startTime}~${g.endTime || ""}`, g.place].filter(Boolean).join(" · ");
+const loadSessions = async gid => (await readVal(`portal/att/sessions/${gid}`)) || {};
+
+// ---------------- 진입 ----------------
+export async function renderAttendance(main, { mode = "today" } = {}, alive) {
+  if (isTeacher()) return renderTeacherList(main, mode, alive);
+  return renderStudentList(main, alive);
 }
 
-// 학생이 스스로 체크인한 기록은 시작 시각 + N분 이후면 '지각'으로 간주
-export function effectiveStatus(rec, group, date) {
-  if (!rec) return null;
-  if (rec.by === "student" && rec.status === "present" && group.startTime && rec.at) {
-    const [h, m] = group.startTime.split(":").map(Number);
-    const [y, mo, d] = date.split("-").map(Number);
-    const limit = new Date(y, mo - 1, d, h, m).getTime() + LATE_AFTER_MINUTES * 60000;
-    if (rec.at > limit) return "late";
-  }
-  return rec.status;
-}
+// ---------------- 교사: 목록 ----------------
+const MODES = {
+  today:  { title: "🕘 출석", desc: "오늘 출석체크할 수 있는 반입니다." },
+  manage: { title: "➗ 반편집", desc: "반 이름·요일·명단을 고치거나 운영을 끝낼 수 있습니다." },
+  stats:  { title: "🟰 통계", desc: "개설된 모든 반의 출결 통계를 볼 수 있습니다." }
+};
 
-function statusChip(key, extra = "") {
-  if (!key) return `<span class="st-chip none">미체크</span>`;
-  const s = ATT_STATUS[key];
-  return `<span class="st-chip" style="--c:${s.color}">${s.label}${extra}</span>`;
-}
-
-function countStatuses(recsByDate, group) {
-  const c = Object.fromEntries(Object.keys(ATT_STATUS).map(k => [k, 0]));
-  Object.entries(recsByDate || {}).forEach(([date, r]) => {
-    const st = effectiveStatus(r, group, date);
-    if (st) c[st]++;
-  });
-  return c;
-}
-
-function checkinUrl(gid, date, code) {
-  return `${location.origin}${location.pathname}#/checkin/${gid}/${date}/${code}`;
-}
-
-// ---------------- 메인 ----------------
-export async function renderAttendance(main, params, alive) {
-  setTitle("🕘 출석 (방과후·야간자율)");
-  if (isTeacher()) return renderTeacherHome(main, alive);
-  return renderStudentHome(main, alive);
-}
-
-// ---------------- 학생 ----------------
-async function renderStudentHome(main, alive) {
-  const sid = session.profile.sid;
-  const groups = (await loadGroups()).filter(g => g.active !== false && g.members?.[sid]);
-  const recs = await Promise.all(groups.map(g => readVal(`portal/att/records/${g.id}/${sid}`)));
-  if (!alive()) return;
-  const today = dateKey();
-
-  if (!groups.length) {
-    main.innerHTML = `<div class="page">${emptyState("참여 중인 방과후·야간자율이 없습니다.\n담당 선생님께 명단 등록을 요청하세요.")}</div>`;
-    return;
-  }
-
-  main.innerHTML = `
-    <div class="page">
-      ${groups.map((g, i) => {
-        const r = recs[i] || {};
-        const todayRec = r[today];
-        const c = countStatuses(r, g);
-        const scheduled = !!g.days?.[new Date().getDay()];
-        const history = Object.keys(r).sort().reverse();
-        return `
-          <div class="info-card">
-            <div class="item-top"><span class="badge type-${g.type}">${esc(ATT_TYPES[g.type]?.label || "")}</span><span class="item-meta">${esc(scheduleText(g))}</span></div>
-            <h2 class="info-title">${esc(g.name)}</h2>
-            <div class="today-box">
-              <div>
-                <div class="item-meta">오늘 ${fmtDateKey(today)}</div>
-                <div>${todayRec ? `${statusChip(effectiveStatus(todayRec, g, today))} <span class="item-meta">${fmtTime(todayRec.at)}</span>` : (scheduled ? "아직 체크인하지 않았어요" : '<span class="item-meta">오늘은 운영일이 아닙니다</span>')}</div>
-              </div>
-              ${todayRec ? "" : `<button class="btn primary" data-checkin="${g.id}">체크인</button>`}
-            </div>
-            <div class="stat-line">${Object.entries(ATT_STATUS).map(([k, s]) => `<span>${s.label} <b>${c[k]}</b></span>`).join("")}</div>
-            ${history.length ? `
-              <details class="history">
-                <summary>출결 기록 ${history.length}일</summary>
-                ${history.map(d => `<div class="history-row"><span>${fmtDateKey(d)}</span><span>${fmtTime(r[d].at)}</span>${statusChip(effectiveStatus(r[d], g, d))}</div>`).join("")}
-              </details>` : ""}
-          </div>`;
-      }).join("")}
-      <p class="page-desc center">📷 감독 선생님 화면의 QR을 휴대폰 카메라로 찍거나, 4자리 코드를 입력하세요.</p>
-    </div>`;
-
-  $$("[data-checkin]", main).forEach(b => b.onclick = async () => {
-    const g = groups.find(x => x.id === b.dataset.checkin);
-    const ok = await modal({
-      title: `${g.name} 체크인`,
-      html: `<p>감독 선생님이 보여주는 4자리 코드를 입력하세요.</p>
-             <input id="ciCode" class="code-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="0000">`,
-      okText: "체크인", cancelText: "취소",
-      onOpen: box => setTimeout(() => $("#ciCode", box).focus(), 50),
-      beforeOk: async box => {
-        const code = $("#ciCode", box).value.trim();
-        if (!/^\d{4}$/.test(code)) throw new Error("4자리 숫자를 입력하세요.");
-        await doCheckin(g.id, dateKey(), code);
-      }
-    });
-    if (ok) renderStudentHome(main, alive);
-  });
-}
-
-async function doCheckin(gid, date, code) {
-  const sid = session.profile.sid;
-  try {
-    await db.ref(`portal/att/records/${gid}/${sid}/${date}`).set({ status: "present", at: serverTime, by: "student", code });
-    toast("체크인 완료!");
-  } catch (err) {
-    const existing = await readVal(`portal/att/records/${gid}/${sid}/${date}`).catch(() => null);
-    if (existing) throw new Error("이미 오늘 출결이 기록되어 있습니다.");
-    throw new Error("코드가 틀렸거나 만료되었습니다. 선생님께 확인하세요.");
-  }
-}
-
-// QR 링크로 들어온 경우
-export async function renderCheckinLink(main, { gid, date, code }, alive) {
-  setTitle("체크인", "#/att");
-  if (isTeacher()) { go(`#/att/g/${gid}`); return; }
-  const group = await readVal(`portal/att/groups/${gid}`);
-  if (!alive()) return;
-  let msg, ok = false;
-  if (!group) msg = "존재하지 않는 출석 그룹입니다.";
-  else if (date !== dateKey()) msg = "오늘 날짜의 QR이 아닙니다.";
-  else if (!group.members?.[session.profile.sid]) msg = `'${esc(group.name)}' 명단에 등록되어 있지 않습니다.`;
-  else {
-    try { await doCheckin(gid, date, code); ok = true; msg = `${esc(group.name)}<br>${fmtDateKey(date)} 체크인 완료`; }
-    catch (err) { msg = esc(err.message); }
-  }
-  if (!alive()) return;
-  main.innerHTML = `
-    <div class="page">
-      <div class="result-big ${ok ? "ok" : "fail"}">
-        <div class="result-icon">${ok ? "✅" : "⚠️"}</div>
-        <div>${msg}</div>
-        <a class="btn primary" href="#/att">내 출결 보기</a>
-      </div>
-    </div>`;
-}
-
-// ---------------- 교사: 그룹 목록 ----------------
-async function renderTeacherHome(main, alive) {
+async function renderTeacherList(main, mode, alive) {
+  const cfg = MODES[mode] || MODES.today;
+  setTitle(cfg.title, mode === "today" ? "#/home" : "#/att");
   const groups = await loadGroups();
   if (!alive()) return;
-  let tab = "night";
-  try { tab = sessionStorage.getItem("att_tab") || tab; } catch {}
-  let showInactive = false;
+
+  let type = "night";
+  try { type = sessionStorage.getItem(TAB_KEY) || type; } catch {}
+  let includeEnded = false;
+  let allRunning = false;
 
   main.innerHTML = `
     <div class="page">
       <div class="tabs">
         ${Object.entries(ATT_TYPES).map(([k, t]) => `<button class="tab" data-type="${k}">${t.label}</button>`).join("")}
       </div>
-      <div class="result-head">
-        <label class="check-line small"><input type="checkbox" id="showInactive"> 종료된 그룹 보기</label>
-        <button class="btn small primary" id="btnNewGroup">+ 새로 만들기</button>
+      <div class="btn-row">
+        <a class="btn small ghost ${mode === "today" ? "on" : ""}" href="#/att">🕘 출석</a>
+        <button class="btn small primary" id="btnNewGroup">➕ 반등록</button>
+        <a class="btn small ghost ${mode === "manage" ? "on" : ""}" href="#/att/manage">➗ 반편집</a>
+        <a class="btn small ghost ${mode === "stats" ? "on" : ""}" href="#/att/stats">🟰 통계</a>
       </div>
-      <div id="groupList" class="card-list"></div>
+      <p class="page-desc">${cfg.desc}</p>
+      <div class="filter-bar" id="attFilters">
+        ${mode === "today"
+          ? `<label class="check-line small"><input type="checkbox" id="allRunning"> 운영중 수업전체</label>`
+          : `<label class="check-line small"><input type="checkbox" id="incEnded"> 종료된 수업 포함</label>`}
+      </div>
+      <div id="groupList"></div>
     </div>`;
 
+  const statsState = { from: dateKey(), to: dateKey(), grade: "" };
+
   const draw = () => {
-    $$("[data-type]", main).forEach(b => b.classList.toggle("active", b.dataset.type === tab));
+    $$("[data-type]", main).forEach(b => b.classList.toggle("active", b.dataset.type === type));
+    if (mode === "stats" && type === "night") {
+      const filterBar = $("#attFilters", main);
+      if (filterBar) filterBar.hidden = false;
+      drawNightStats($("#groupList", main), groups.filter(g => includeEnded || g.active !== false), statsState, alive);
+      return;
+    }
+    const mine = g => isOwnerless(g) || g.createdByUid === session.profile.uid;
+    // 출석 화면의 [운영중 수업전체]는 방과후에서만, [종료된 수업 포함]은 반편집·통계에서만 씁니다.
+    // 이미 끝난 수업을 출석체크할 일은 없으므로 출석 화면에는 종료된 반을 아예 띄우지 않습니다.
+    const useAllRunning = mode === "today" && type === "afterschool";
+    const filterBar = $("#attFilters", main);
+    if (filterBar) filterBar.hidden = mode === "today" && !useAllRunning;
+    const showEnded = mode !== "today" && includeEnded;
+    const showAll = useAllRunning && allRunning;
     const list = groups
-      .filter(g => g.type === tab && (showInactive || g.active !== false))
-      .sort((a, b) => (Number(b.year) - Number(a.year)) || a.name.localeCompare(b.name, "ko"));
-    $("#groupList", main).innerHTML = list.length ? list.map(g => `
-      <a class="item-card" href="#/att/g/${g.id}">
-        <div class="item-top">${g.active === false ? '<span class="badge st-closed">종료</span>' : ""}<span class="item-meta">${esc(g.year)}학년도 · ${esc(scheduleText(g))}</span></div>
-        <div class="item-title">${esc(g.name)}</div>
-        <div class="item-meta">학생 ${Object.keys(g.members || {}).length}명 · 담당 ${esc(g.createdBy || "")}</div>
-      </a>`).join("") : emptyState(`등록된 ${ATT_TYPES[tab].label} 그룹이 없습니다.`);
+      .filter(g => g.type === type)
+      .filter(g => showEnded || g.active !== false)
+      .filter(g => {
+        if (mode === "stats") return true;                        // 통계는 개설된 모든 반
+        if (mode === "manage") return type === "night" || mine(g); // 편집은 야자 전체 / 방과후는 내 반
+        if (showAll) return true;                                  // 방과후: 운영중 수업전체
+        return runsOn(g) && (type === "night" || mine(g));         // 오늘 운영하는 반
+      })
+      .sort((a, b) => (Number(b.year) - Number(a.year)) || String(a.name).localeCompare(String(b.name), "ko"));
+
+    const card = g => {
+      const locked = mode === "today" && !canManage(g);
+      const href = mode === "stats" ? `#/att/stats/${g.id}` : `#/att/g/${g.id}`;
+      const inner = `
+        <div class="item-top">
+          ${g.type === "afterschool" ? `<span class="badge type-${g.type}">${esc(ATT_TYPES[g.type].label)}</span>` : ""}
+          ${g.active === false ? '<span class="badge st-closed">종료</span>' : ""}
+          ${mode === "today" && runsOn(g) ? '<span class="badge st-open">오늘 운영</span>' : ""}
+          <span class="item-meta">${esc(cardSchedule(g))}</span>
+        </div>
+        <div class="item-title">${esc(cardTitle(g))}</div>
+        <div class="item-meta">학생 ${Object.keys(g.members || {}).length}명${g.type === "afterschool" ? ` · 담당 ${esc(g.createdBy || "(없음)")}` : ""}${isOwnerless(g) ? " · ⚠️ 등록 교사 정보 없음" : ""}${locked ? " · 🔒 담당 교사만 출석체크" : ""}</div>`;
+      if (mode === "manage") return `<button class="item-card" data-edit="${g.id}">${inner}</button>`;
+      return locked ? `<div class="item-card locked">${inner}</div>` : `<a class="item-card" href="${href}">${inner}</a>`;
+    };
+
+    // 야간자율은 8교시·자율1·자율2 묶음으로 나눠서 봅니다.
+    const grouped = () => nightPeriods().map(pk => {
+      const inPeriod = list.filter(g => groupPeriodKey(g) === pk)
+        .sort((a, b) => String(a.grade || a.name).localeCompare(String(b.grade || b.name), "ko"));
+      return inPeriod.length
+        ? `<div class="section-head"><h3>${esc(ATT_PERIODS[pk].label)}</h3><span class="item-meta">${inPeriod.length}개 반</span></div>
+           <div class="card-list">${inPeriod.map(card).join("")}</div>`
+        : "";
+    }).join("");
+
+    $("#groupList", main).innerHTML = list.length
+      ? (type === "night" ? grouped() : `<div class="card-list">${list.map(card).join("")}</div>`)
+      : emptyState(mode === "today"
+      ? (type === "night"
+          ? "오늘 운영하는 야간자율 반이 없습니다."
+          : "오늘 출석체크할 반이 없습니다.\n다른 요일 반을 보려면 [운영중 수업전체]를 켜세요.")
+      : "등록된 반이 없습니다.");
+
+    $$("[data-edit]", main).forEach(b => b.onclick = async () => {
+      const g = groups.find(x => x.id === b.dataset.edit);
+      if (await groupDialog(g, groups)) renderTeacherList(main, mode, alive);
+    });
   };
 
   $$("[data-type]", main).forEach(b => b.onclick = () => {
-    tab = b.dataset.type;
-    try { sessionStorage.setItem("att_tab", tab); } catch {}
+    type = b.dataset.type;
+    try { sessionStorage.setItem(TAB_KEY, type); } catch {}
     draw();
   });
-  $("#showInactive", main).onchange = e => { showInactive = e.target.checked; draw(); };
+  $("#incEnded", main)?.addEventListener("change", e => { includeEnded = e.target.checked; draw(); });
+  $("#allRunning", main)?.addEventListener("change", e => { allRunning = e.target.checked; draw(); });
   $("#btnNewGroup", main).onclick = async () => {
-    const id = await groupDialog({ type: tab, year: schoolYear(), days: tab === "night" ? { 1: true, 2: true, 3: true, 4: true } : {} });
+    const id = await groupDialog({ type, year: schoolYear() }, groups);
     if (id) go(`#/att/g/${id}`);
   };
   draw();
 }
 
-function groupDialog(g) {
+// ---------------- 교사: 야간자율 통계 (학년별 표) ----------------
+// 가로는 그 기간에 실제 운영된 교시만, 세로는 그 학년 학생.
+// 출석이 아닌 날이 있으면 "/" 를 찍고, 누르면 날짜·상태·메모를 보여 줍니다.
+async function drawNightStats(container, groups, state, alive) {
+  const nightGroups = groups.filter(g => g.type === "night");
+  const grades = [...new Set(nightGroups.map(g => String(g.grade || "")))].filter(Boolean).sort();
+  if (!grades.includes(state.grade)) state.grade = grades[0] || "";
+
+  container.innerHTML = `
+    <div class="roll-bar">
+      <input type="date" id="stFrom" value="${state.from}"> ~ <input type="date" id="stTo" value="${state.to}">
+    </div>
+    <div class="chip-row">${grades.map(g => `<button class="chip ${g === state.grade ? "on" : ""}" data-grade="${g}">${g}학년</button>`).join("")}</div>
+    <div id="nightMatrix">${grades.length ? `<div class="page-loading"><div class="spinner"></div></div>` : emptyState("등록된 야간자율 반이 없습니다.")}</div>`;
+
+  const rerun = () => drawNightStats(container, groups, state, alive);
+  $("#stFrom", container).onchange = e => { state.from = e.target.value; rerun(); };
+  $("#stTo", container).onchange = e => { state.to = e.target.value; rerun(); };
+  $$("[data-grade]", container).forEach(b => b.onclick = () => { state.grade = b.dataset.grade; rerun(); });
+  if (!grades.length) return;
+
+  const gradeGroups = nightGroups.filter(g => String(g.grade) === state.grade);
+  const yearOf = g => Number(g.year) || schoolYear();
+  const loaded = await Promise.all(gradeGroups.map(async g => {
+    const [records, sessions] = await Promise.all([readVal(`portal/att/records/${g.id}`), loadSessions(g.id)]);
+    return { g, year: yearOf(g), records: records || {}, dates: sessionDates(sessions, state.from, state.to) };
+  }));
+  if (!alive()) return;
+
+  // 학번은 해마다 다른 학생에게 다시 쓰이므로, 기간이 두 학년도에 걸치면 학년도별로 표를 나눕니다.
+  // (한 표에 섞으면 올해 10103 신입생 이름이 작년 10103 선배 기록 자리에 찍힙니다)
+  const years = [...new Set(loaded.filter(d => d.dates.length).map(d => d.year))].sort((a, b) => b - a);
+  const box = $("#nightMatrix", container);
+  if (!years.length) {
+    box.innerHTML = emptyState("이 기간에 감독교사 확인이 된 야간자율이 없습니다.");
+    return;
+  }
+
+  const oneDay = state.from === state.to;
+  const problemsOf = (col, sid) => col.dates
+    .map(d => ({ date: d, status: effectiveStatus(col.records[sid]?.[d], col.g, d), note: col.records[sid]?.[d]?.note || "" }))
+    .filter(x => x.status !== "present");
+
+  const tables = await Promise.all(years.map(async year => {
+    const studentMap = await getStudentMap(year);
+    // 그 기간에 실제 운영된 교시만 세로줄로 세웁니다.
+    const cols = nightPeriods()
+      .map(pk => loaded.find(d => d.year === year && groupPeriodKey(d.g) === pk && d.dates.length))
+      .filter(Boolean);
+    const sids = [...new Set(cols.flatMap(c => Object.keys(c.g.members || {})))].sort(sidCompare);
+    return { year, studentMap, cols, sids };
+  }));
+  if (!alive()) return;
+
+  box.innerHTML = tables.map((t, ti) => `
+    <p class="item-meta">${years.length > 1 ? `<b>${t.year}학년도</b> · ` : ""}${esc(state.grade)}학년 · ${oneDay ? fmtDateKey(state.from) : `${state.from} ~ ${state.to}`} · 운영 교시 ${t.cols.map(c => ATT_PERIODS[groupPeriodKey(c.g)].label).join("·")}</p>
+    <div class="table-wrap" style="margin-bottom:14px">
+      <table class="data-table att-matrix">
+        <thead><tr><th>번호</th><th>이름</th>${t.cols.map(c => `<th>${esc(ATT_PERIODS[groupPeriodKey(c.g)].label)}<br><span class="item-meta">${c.dates.length}일</span></th>`).join("")}</tr></thead>
+        <tbody>
+          ${t.sids.map(sid => {
+            const st = t.studentMap[sid] || {};
+            return `<tr>
+              <td>${esc(st.no || "")}</td><td class="left">${esc(st.name || sid)}</td>
+              ${t.cols.map((c, i) => {
+                if (!c.g.members?.[sid]) return `<td class="off"></td>`;
+                const bad = problemsOf(c, sid);
+                return `<td>${bad.length ? `<button class="cell-mark" data-t="${ti}" data-col="${i}" data-sid="${esc(sid)}">/</button>` : ""}</td>`;
+              }).join("")}
+            </tr>`;
+          }).join("")}
+        </tbody>
+      </table>
+    </div>`).join("") + `<p class="item-meta">출석이 아닌 날이 있으면 <b>/</b> 가 표시됩니다. 눌러서 자세한 내용을 보세요.</p>`;
+
+  $$("[data-col]", box).forEach(btn => btn.onclick = () => {
+    const t = tables[Number(btn.dataset.t)];
+    const col = t.cols[Number(btn.dataset.col)];
+    const sid = btn.dataset.sid;
+    const st = t.studentMap[sid] || {};
+    modal({
+      title: `${st.name || sid} · ${ATT_PERIODS[groupPeriodKey(col.g)].label}`,
+      html: problemsOf(col, sid).map(x => `
+        <div class="detail-row">
+          ${oneDay ? "" : `<b>${fmtDateKey(x.date)}</b>`}
+          ${statusChip(x.status)}
+          ${x.note ? `<span class="item-meta">${esc(x.note)}</span>` : ""}
+        </div>`).join("")
+    });
+  });
+}
+
+// ---------------- 교사: 반 등록·편집 ----------------
+function groupDialog(g, allGroups = []) {
+  const isNew = !g.id;
+  const type = g.type;
+  const night = type === "night";
   let savedId = null;
+  let picker = null;
+
+  const dayRows = Object.entries(ATT_DAY_PERIODS[type]).map(([day, periods]) => `
+    <div class="slot-row">
+      <span class="slot-day">${WEEK[day]}</span>
+      ${periods.map(k => `
+        <label class="slot-chk"><input type="checkbox" class="gSlot" data-day="${day}" value="${k}" ${g.slots?.[day]?.[k] ? "checked" : ""}> ${ATT_PERIODS[k].label}</label>`).join("")}
+    </div>`).join("");
+
   return modal({
-    title: g.id ? "그룹 설정" : "새 출석 그룹",
+    title: isNew ? `➕ 반등록 · ${ATT_TYPES[type].label}` : `➗ 반편집 · ${esc(g.name || "")}`,
     wide: true,
     html: `
-      <div class="field-row">
-        <label class="field"><span>구분</span>
-          <select id="gType">${Object.entries(ATT_TYPES).map(([k, t]) => `<option value="${k}" ${g.type === k ? "selected" : ""}>${t.label}</option>`).join("")}</select>
-        </label>
-        <label class="field"><span>학년도</span><input id="gYear" type="number" value="${esc(g.year || schoolYear())}"></label>
-      </div>
-      <label class="field"><span>이름</span><input id="gName" value="${esc(g.name || "")}" placeholder="예: 2학년 야간자율 A실 / 방과후 수학심화"></label>
-      <div class="field"><span>운영 요일</span>
-        <div class="checks">${[1, 2, 3, 4, 5, 6].map(d => `<label><input type="checkbox" class="gDay" value="${d}" ${g.days?.[d] ? "checked" : ""}> ${WEEK[d]}</label>`).join("")}</div>
-      </div>
-      <div class="field-row">
-        <label class="field"><span>시작 시각</span><input id="gStart" type="time" value="${esc(g.startTime || "")}"></label>
-        <label class="field"><span>종료 시각</span><input id="gEnd" type="time" value="${esc(g.endTime || "")}"></label>
-      </div>
-      <label class="field"><span>장소</span><input id="gPlace" value="${esc(g.place || "")}" placeholder="예: 본관 3층 자습실"></label>
-      <p class="item-meta">시작 시각 ${LATE_AFTER_MINUTES}분 이후 체크인은 자동으로 '지각' 표시됩니다.</p>`,
-    okText: "저장", cancelText: "취소",
+      ${night ? `
+        <div class="field-row">
+          <label class="field"><span>학년</span>
+            <select id="gGrade">${NIGHT_GRADES.map(n => `<option ${String(g.grade) === n ? "selected" : ""}>${n}</option>`).join("")}</select>
+          </label>
+          <label class="field"><span>교시</span>
+            <select id="gPeriod">${nightPeriods().map(k => `<option value="${k}" ${g.period === k ? "selected" : ""}>${ATT_PERIODS[k].label}</option>`).join("")}</select>
+          </label>
+        </div>
+        <p class="item-meta">운영 요일은 시간표대로 자동입니다 — 자율1 월~금 · 자율2 월~목 · 8교시 금요일.</p>` : `
+        <div class="field-row">
+          <label class="field"><span>반 이름</span><input id="gName" value="${esc(g.name || "")}" placeholder="예: 수학심화"></label>
+          <label class="field"><span>학년도</span><input id="gYear" type="number" value="${esc(g.year || schoolYear())}"></label>
+        </div>
+        <div class="field"><span>운영 요일·교시</span><div class="slot-grid">${dayRows}</div></div>`}
+      <label class="field"><span>장소 (선택)</span><input id="gPlace" value="${esc(g.place || "")}" placeholder="예: 본관 3층 자습실"></label>
+      ${memberPickerHtml(night ? `학생 명단 (각 학년 ${NIGHT_CLASS}반)` : "학생 명단", night)}
+      ${isNew ? "" : `
+        <div class="btn-row" style="border-top:1px solid var(--line); padding-top:12px">
+          <button type="button" class="btn small ghost" data-x="toggle">${g.active === false ? "▶️ 다시 운영" : "⏹ 운영 종료"}</button>
+          <button type="button" class="btn small ghost danger" data-x="delete">🗑 삭제</button>
+        </div>`}
+      <p class="item-meta">${ATT_TYPES[type].label}는 ${type === "night" ? "모든 교사가 편집·출석체크할 수 있습니다." : "반을 등록한 교사만 편집·출석체크할 수 있습니다."} 시작 ${LATE_AFTER_MINUTES}분 뒤 체크인은 지각입니다.</p>`,
+    okText: "저장",
+    cancelText: "취소",
+    onOpen: async (box, close) => {
+      const gradeSel = $("#gGrade", box);
+      picker = await bindMemberPicker(box, g.members, night ? { fixed: { grade: gradeSel.value, cls: NIGHT_CLASS } } : {});
+      // 야간자율: 학년을 바꾸면 그 학년 반 학생으로 자동 교체
+      if (night) {
+        if (isNew) picker.setFixedClass(gradeSel.value, NIGHT_CLASS);
+        gradeSel.onchange = () => picker.setFixedClass(gradeSel.value, NIGHT_CLASS);
+      }
+      box.addEventListener("click", async e => {
+        const act = e.target.closest("[data-x]")?.dataset.x;
+        if (act === "toggle") {
+          const resume = g.active === false;
+          await db.ref(`portal/att/groups/${g.id}/active`).set(resume);
+          toast(resume ? "다시 운영합니다." : "운영을 종료했습니다.");
+          savedId = g.id;
+          close(true);
+        }
+        if (act === "delete") {
+          const records = (await readVal(`portal/att/records/${g.id}`)) || {};
+          const days = new Set();
+          Object.values(records).forEach(byDate => Object.keys(byDate || {}).forEach(d => days.add(d)));
+          const kept = Object.keys(records).length;
+
+          if (!(await confirmBox("반 삭제", `'${esc(g.name)}' 반을 삭제할까요?`, "삭제"))) return;
+          // 출결 기록이 있으면 한 번 더 확인합니다.
+          if (kept && !(await confirmBox(
+            "⚠️ 출결 기록이 함께 지워집니다",
+            `이 반에는 학생 <b>${kept}명</b>의 출결 기록(<b>${days.size}일</b>)이 남아 있습니다.<br>` +
+            "반을 지우면 그 기록도 함께 사라지고 되돌릴 수 없습니다.<br><br>그래도 삭제할까요?",
+            "기록까지 삭제"))) return;
+
+          if (await guard("반 삭제", async () => {
+            await db.ref(`portal/att/records/${g.id}`).remove();
+            await db.ref(`portal/att/sessions/${g.id}`).remove();
+            await db.ref(`portal/att/codes/${g.id}`).remove();
+            await db.ref(`portal/att/groups/${g.id}`).remove();
+          })) {
+            toast("삭제되었습니다.");
+            savedId = g.id;
+            close(true);
+          }
+        }
+      });
+    },
     beforeOk: async box => {
-      const name = $("#gName", box).value.trim();
-      if (!name) throw new Error("이름을 입력하세요.");
-      const days = {};
-      $$(".gDay", box).forEach(c => { if (c.checked) days[c.value] = true; });
+      const year = night ? (Number(g.year) || schoolYear()) : (Number($("#gYear", box).value) || schoolYear());
+      let name, slots, extra = {};
+      if (night) {
+        const grade = $("#gGrade", box).value;
+        const period = $("#gPeriod", box).value;
+        const dup = allGroups.find(x => x.id !== g.id && x.type === "night" && String(x.grade) === grade && x.period === period && Number(x.year) === year);
+        if (dup) throw new Error(`이미 ${nightGroupName(grade, period)} 반이 있습니다.`);
+        name = nightGroupName(grade, period);
+        slots = nightSlots(period);
+        extra = { grade, period };
+      } else {
+        name = $("#gName", box).value.trim();
+        if (!name) throw new Error("반 이름을 입력하세요.");
+        slots = {};
+        $$(".gSlot", box).forEach(c => {
+          if (!c.checked) return;
+          (slots[c.dataset.day] ||= {})[c.value] = true;
+        });
+        if (!Object.keys(slots).length) throw new Error("운영 요일·교시를 하나 이상 고르세요.");
+      }
+      const members = picker.get();
+      if (!members) throw new Error("학생을 한 명 이상 선택하세요.");
       const data = {
-        type: $("#gType", box).value,
-        year: Number($("#gYear", box).value) || schoolYear(),
-        name,
-        days: Object.keys(days).length ? days : null,
-        startTime: $("#gStart", box).value || null,
-        endTime: $("#gEnd", box).value || null,
+        type, name, members, slots, year, ...extra,
         place: $("#gPlace", box).value.trim() || null
       };
       if (g.id) {
+        // 등록 교사 정보가 없던 반은 이때 내 이름으로 맡습니다.
+        if (isOwnerless(g)) Object.assign(data, { createdBy: session.profile.name, createdByUid: session.profile.uid });
         await db.ref(`portal/att/groups/${g.id}`).update(data);
         savedId = g.id;
       } else {
         savedId = newKey("portal/att/groups");
-        await db.ref(`portal/att/groups/${savedId}`).set({ ...data, active: true, createdBy: session.profile.name, createdAt: serverTime });
+        await db.ref(`portal/att/groups/${savedId}`).set({
+          ...data, active: true, createdBy: session.profile.name, createdByUid: session.profile.uid, createdAt: serverTime
+        });
       }
       toast("저장되었습니다.");
     }
   }).then(ok => (ok ? savedId : null));
 }
 
-// ---------------- 교사: 그룹 상세 ----------------
+// ---------------- 교사: 출석부 (오늘) ----------------
 export async function renderGroup(main, { gid }, alive) {
-  if (!isTeacher()) { go("#/att"); return; }
-  setTitle("🕘 출석부", "#/att");
-  const [groupInit, studentMap] = await Promise.all([readVal(`portal/att/groups/${gid}`), getStudentMap()]);
+  const group = await readVal(`portal/att/groups/${gid}`);
   if (!alive()) return;
-  if (!groupInit) { main.innerHTML = emptyState("그룹을 찾을 수 없습니다."); return; }
+  if (!group) { main.innerHTML = emptyState("반을 찾을 수 없습니다."); return; }
+  group.id = gid;
+  if (!isTeacher()) return renderStudentGroup(main, group, alive);
 
-  let group = { ...groupInit, id: gid };
+  setTitle("🕘 출석부", "#/att");
+  if (!canManage(group)) {
+    main.innerHTML = emptyState(`🔒 이 반은 등록한 교사(${group.createdBy || ""})만 출석체크할 수 있습니다.`);
+    return;
+  }
+
+  const today = dateKey();
+  const studentMap = await getStudentMap(group.year || schoolYear());
+  if (!alive()) return;
   let records = {};
-  let tab = "roll";
-  let date = dateKey();
-  const now = new Date();
-  let range = { from: dateKey(new Date(now.getFullYear(), now.getMonth(), 1)), to: dateKey() };
+  // 야간자율은 그날 감독교사가 '감독교사 확인'을 눌러야 출석체크를 시작할 수 있습니다.
+  const needsSupervisor = group.type === "night";
+  let supervisor = null;
 
   main.innerHTML = `
-    <div class="page wide">
-      <div class="group-head">
-        <div>
+    <div class="page">
+      <div class="info-card">
+        <div class="item-top">
           <span class="badge type-${group.type}">${esc(ATT_TYPES[group.type]?.label || "")}</span>
-          <h2 class="info-title" id="gTitle"></h2>
-          <div class="item-meta" id="gMeta"></div>
+          <span class="item-meta">${esc(cardSchedule(group))}</span>
         </div>
+        <h2 class="info-title">${esc(group.name)}</h2>
+        <div class="info-meta">${fmtDateKey(today)} · 학생 ${Object.keys(group.members || {}).length}명</div>
+        <div class="btn-row">
+          ${needsSupervisor ? `<button class="btn ghost" id="btnSupervisor">🙋 감독교사 확인</button>` : ""}
+          <button class="btn primary" id="btnCode">📋 체크인 코드</button>
+        </div>
+        <div class="item-meta" id="supervisorInfo"></div>
       </div>
-      <div class="tabs">
-        <button class="tab active" data-tab="roll">출석부</button>
-        <button class="tab" data-tab="stats">통계</button>
-        <button class="tab" data-tab="members">명단·설정</button>
-      </div>
-      <div id="groupBody"></div>
+      <div class="stat-line" id="rollCount"></div>
+      <div class="roll-list" id="rollList"></div>
+      <p class="page-desc">체크인하지 않은 학생은 <b>결석</b>으로 기록됩니다. 기기가 없는 학생은 선생님이 직접 눌러 주세요.</p>
     </div>`;
-  const body = $("#groupBody", main);
 
-  const drawHead = () => {
-    $("#gTitle", main).textContent = group.name;
-    $("#gMeta", main).textContent = `${group.year}학년도 · ${scheduleText(group)} · 학생 ${Object.keys(group.members || {}).length}명`;
+  const members = () => Object.keys(group.members || {}).sort(sidCompare)
+    .map(sid => ({ sid, ...(studentMap[sid] || { name: "(계정 없음)", no: "" }) }));
+
+  const iAmSupervisor = () => !needsSupervisor || supervisor?.uid === session.profile.uid;
+
+  const drawSupervisor = () => {
+    if (!needsSupervisor) return;
+    const iAm = supervisor?.uid === session.profile.uid;
+    $("#supervisorInfo", main).innerHTML = supervisor
+      ? `<b>${esc(supervisor.name || "")}</b> 선생님의 감독일입니다.`
+      : "먼저 <b>감독교사 확인</b>을 눌러야 출석체크를 시작할 수 있습니다.";
+    const btn = $("#btnSupervisor", main);
+    btn.textContent = supervisor ? (iAm ? "✅ 내가 감독중" : `🙋 감독: ${supervisor.name || ""}`) : "🙋 감독교사 확인";
+    btn.classList.toggle("on", iAm);
+    btn.disabled = !!supervisor && !iAm;
+    $("#btnCode", main).disabled = !iAm;
+  };
+
+  const draw = () => {
+    const list = members();
+    const blocked = !iAmSupervisor();   // 감독 확인 전이거나, 다른 교사가 감독인 날
+    const counts = countStatuses(records, group, []);
+    list.forEach(m => { counts[effectiveStatus(records[m.sid]?.[today], group, today)]++; });
+
+    $("#rollCount", main).innerHTML = Object.entries(ATT_STATUS)
+      .map(([k, s]) => `<span style="color:${s.color}">${s.label} <b>${counts[k]}</b></span>`).join("");
+
+    $("#rollList", main).innerHTML = list.length ? list.map(m => {
+      const rec = records[m.sid]?.[today];
+      const st = effectiveStatus(rec, group, today);
+      return `
+        <div class="roll-row ${rec ? "" : "unchecked"}">
+          <div class="roll-who">
+            <b>${esc(m.name)}</b> <span class="item-meta">${esc(m.sid)}</span>
+            <div class="item-meta">${rec ? (rec.by === "student" ? `📱 체크인 ${fmtTime(rec.at)}` : "✍️ 교사 입력") : "미체크"}${rec?.note ? ` · ${esc(rec.note)}` : ""}</div>
+          </div>
+          <div class="roll-status">
+            ${Object.entries(ATT_STATUS).map(([k, s]) => `<button class="st-btn ${st === k ? "on" : ""}" style="--c:${s.color}" data-sid="${esc(m.sid)}" data-st="${k}" ${blocked ? "disabled" : ""}>${s.short}</button>`).join("")}
+            <button class="st-btn memo" data-memo="${esc(m.sid)}" title="메모" ${blocked ? "disabled" : ""}>✎</button>
+          </div>
+        </div>`;
+    }).join("") : emptyState("명단이 비어 있습니다. [➗ 반편집]에서 학생을 추가하세요.");
+
+    $$("[data-st]", main).forEach(b => b.onclick = () => setStatus(b.dataset.sid, b.dataset.st));
+    $$("[data-memo]", main).forEach(b => b.onclick = () => editMemo(b.dataset.memo));
+    drawSupervisor();
   };
 
   const recRef = db.ref(`portal/att/records/${gid}`);
-  const grpRef = db.ref(`portal/att/groups/${gid}`);
-
-  const memberList = () => Object.keys(group.members || {}).sort(sidCompare)
-    .map(sid => ({ sid, ...(studentMap[sid] || { name: "(계정 없음)" }) }));
-
-  // ---- 출석부 ----
-  const drawRoll = () => {
-    const members = memberList();
-    // 명단에서 빠졌지만 그날 기록이 있는 학생도 표시
-    Object.keys(records).forEach(sid => {
-      if (records[sid]?.[date] && !group.members?.[sid]) members.push({ sid, ...(studentMap[sid] || { name: "" }), removed: true });
-    });
-    const counts = { none: 0 };
-    Object.keys(ATT_STATUS).forEach(k => { counts[k] = 0; });
-    members.forEach(m => { counts[effectiveStatus(records[m.sid]?.[date], group, date) || "none"]++; });
-
-    body.innerHTML = `
-      <div class="roll-bar">
-        <input type="date" id="rollDate" value="${date}">
-        <button class="btn primary" id="btnCode">📷 체크인 코드·QR</button>
-      </div>
-      <div class="stat-line">
-        ${Object.entries(ATT_STATUS).map(([k, s]) => `<span style="color:${s.color}">${s.label} <b>${counts[k]}</b></span>`).join("")}
-        <span>미체크 <b>${counts.none}</b></span>
-      </div>
-      <div class="btn-row">
-        <button class="btn small ghost" id="btnAllAbsent" ${counts.none ? "" : "disabled"}>미체크 → 결석 처리</button>
-        <button class="btn small ghost" id="btnAllPresent" ${counts.none ? "" : "disabled"}>미체크 → 출석 처리</button>
-      </div>
-      <div class="roll-list">
-        ${members.length ? members.map(m => {
-          const rec = records[m.sid]?.[date];
-          const st = effectiveStatus(rec, group, date);
-          return `
-            <div class="roll-row ${st ? "" : "unchecked"}">
-              <div class="roll-who">
-                <b>${esc(m.name)}</b> <span class="item-meta">${esc(m.sid)}${m.removed ? " (명단 제외)" : ""}</span>
-                <div class="item-meta">${rec?.at ? `${rec.by === "student" ? "📱 체크인" : "✍️ 교사"} ${fmtTime(rec.at)}` : ""}${rec?.note ? ` · ${esc(rec.note)}` : ""}</div>
-              </div>
-              <div class="roll-status">
-                ${Object.entries(ATT_STATUS).map(([k, s]) => `<button class="st-btn ${st === k ? "on" : ""}" style="--c:${s.color}" data-sid="${esc(m.sid)}" data-st="${k}">${s.short}</button>`).join("")}
-                <button class="st-btn memo" data-memo="${esc(m.sid)}" title="메모">✎</button>
-              </div>
-            </div>`;
-        }).join("") : emptyState("명단이 비어 있습니다. [명단·설정] 탭에서 학생을 추가하세요.")}
-      </div>`;
-
-    $("#rollDate", body).onchange = e => { date = e.target.value || dateKey(); drawRoll(); };
-    $("#btnCode", body).onclick = () => openCodeDialog(group, date);
-    $$("[data-st]", body).forEach(b => b.onclick = () => setStatus(b.dataset.sid, b.dataset.st));
-    $$("[data-memo]", body).forEach(b => b.onclick = () => editMemo(b.dataset.memo));
-    const bulk = async status => {
-      const targets = members.filter(m => !m.removed && !records[m.sid]?.[date]);
-      if (!(await confirmBox("일괄 처리", `미체크 ${targets.length}명을 '${ATT_STATUS[status].label}'(으)로 처리할까요?`))) return;
-      const updates = {};
-      targets.forEach(m => {
-        updates[`${m.sid}/${date}`] = { status, by: "teacher", updatedBy: session.profile.name, updatedAt: serverTime };
-      });
-      await recRef.update(updates);
-      toast("처리했습니다.");
-    };
-    $("#btnAllAbsent", body).onclick = () => bulk("absent");
-    $("#btnAllPresent", body).onclick = () => bulk("present");
+  // 그날을 운영일(감독 확인)로 남깁니다. 야간자율은 이미 감독 확인이 되어 있어야 여기까지 옵니다.
+  const ensureSession = async () => {
+    const snap = await sessionRef.once("value");
+    if (!snap.val()?.uid) {
+      await sessionRef.update({ uid: session.profile.uid, name: session.profile.name, at: serverTime });
+    }
   };
 
   const setStatus = async (sid, status) => {
-    const rec = records[sid]?.[date];
-    const current = effectiveStatus(rec, group, date);
-    const ref = recRef.child(`${sid}/${date}`);
-    if (current === status && rec?.by === "teacher") {
-      // 같은 버튼을 다시 누르면 교사 입력 취소
-      await ref.remove();
-      return;
-    }
-    await ref.update({ status, by: "teacher", updatedBy: session.profile.name, updatedAt: serverTime });
+    const rec = records[sid]?.[today];
+    const ref = recRef.child(`${sid}/${today}`);
+    // 같은 버튼을 다시 누르면 교사 입력 취소 (→ 미체크=결석)
+    if (rec?.by === "teacher" && rec.status === status && !rec.note) return guard("출결 지우기", () => ref.remove());
+    await guard("출결 저장", async () => {
+      await ensureSession();
+      await ref.update({ status, by: "teacher", updatedBy: session.profile.name, updatedAt: serverTime });
+    });
   };
 
   const editMemo = async sid => {
-    const rec = records[sid]?.[date] || {};
+    const rec = records[sid]?.[today] || {};
     await modal({
-      title: `${studentMap[sid]?.name || sid} · ${fmtDateKey(date)} 메모`,
+      title: `${studentMap[sid]?.name || sid} 메모`,
       html: `<input id="memoText" value="${esc(rec.note || "")}" placeholder="예: 병원 진료로 조퇴">`,
       okText: "저장", cancelText: "취소",
       beforeOk: async box => {
         const note = $("#memoText", box).value.trim();
-        if (!records[sid]?.[date] && !note) return;
-        await recRef.child(`${sid}/${date}`).update({
+        if (!records[sid]?.[today] && !note) return;
+        await guard("메모 저장", () => recRef.child(`${sid}/${today}`).update({
           note: note || null,
-          ...(rec.status ? {} : { status: "excused", by: "teacher" }),
+          ...(rec.status ? {} : { status: "absent", by: "teacher" }),
           updatedBy: session.profile.name, updatedAt: serverTime
-        });
+        }));
       }
     });
   };
 
-  // ---- 통계 ----
-  const drawStats = () => {
-    const members = memberList();
-    const sessionDates = new Set();
-    Object.values(records).forEach(byDate => Object.keys(byDate || {}).forEach(d => {
-      if (d >= range.from && d <= range.to) sessionDates.add(d);
-    }));
-    const dates = [...sessionDates].sort();
-    const rows = members.map(m => {
-      const c = Object.fromEntries(Object.keys(ATT_STATUS).map(k => [k, 0]));
-      let none = 0;
-      dates.forEach(d => {
-        const st = effectiveStatus(records[m.sid]?.[d], group, d);
-        if (st) c[st]++; else none++;
-      });
-      const attended = c.present + c.late + c.early;
-      const rate = dates.length ? Math.round(attended / dates.length * 100) : 0;
-      return { ...m, c, none, rate };
-    });
+  $("#btnCode", main).onclick = () => openCodeDialog(group, today);
+  $("#btnSupervisor", main)?.addEventListener("click", async () => {
+    if (supervisor && supervisor.uid !== session.profile.uid) return;   // 다른 교사가 감독이면 누를 수 없음
+    if (supervisor) {
+      // 잘못 누른 경우를 위해 본인은 감독을 내려놓을 수 있습니다.
+      if (!(await confirmBox("감독 내려놓기", "오늘 감독을 내려놓을까요?<br>다른 선생님이 감독교사 확인을 누를 수 있게 됩니다."))) return;
+      if (await guard("감독 내려놓기", () => sessionRef.update({ uid: null, name: null }))) toast("감독을 내려놓았습니다.");
+      return;
+    }
+    if (await guard("감독교사 지정", () => sessionRef.update({ uid: session.profile.uid, name: session.profile.name, at: serverTime }))) {
+      toast("오늘 감독교사로 지정되었습니다.");
+    }
+  });
+  draw();
 
-    body.innerHTML = `
-      <div class="roll-bar">
-        <input type="date" id="stFrom" value="${range.from}"> ~ <input type="date" id="stTo" value="${range.to}">
-        <button class="btn small ghost" id="btnStatCsv">CSV</button>
-      </div>
-      <p class="item-meta">기간 내 운영일 <b>${dates.length}</b>일 (출결 기록이 1건 이상 있는 날 기준) · 출석률 = (출석+지각+조퇴) / 운영일</p>
-      <div class="table-wrap">
-        <table class="data-table">
-          <thead><tr><th>학번</th><th>이름</th>${Object.values(ATT_STATUS).map(s => `<th>${s.label}</th>`).join("")}<th>미체크</th><th>출석률</th></tr></thead>
-          <tbody>
-            ${rows.map(r => `<tr data-detail="${esc(r.sid)}">
-              <td>${esc(r.sid)}</td><td class="left">${esc(r.name)}</td>
-              ${Object.keys(ATT_STATUS).map(k => `<td class="${r.c[k] && k !== "present" ? "warn" : ""}">${r.c[k]}</td>`).join("")}
-              <td>${r.none}</td><td><b>${r.rate}%</b></td>
-            </tr>`).join("")}
-          </tbody>
-        </table>
-      </div>`;
-
-    $("#stFrom", body).onchange = e => { range.from = e.target.value; drawStats(); };
-    $("#stTo", body).onchange = e => { range.to = e.target.value; drawStats(); };
-    $("#btnStatCsv", body).onclick = () => {
-      const header = ["학번", "이름", ...Object.values(ATT_STATUS).map(s => s.label), "미체크", "출석률", ...dates];
-      const csv = [header, ...rows.map(r => [
-        r.sid, r.name, ...Object.keys(ATT_STATUS).map(k => r.c[k]), r.none, r.rate + "%",
-        ...dates.map(d => { const st = effectiveStatus(records[r.sid]?.[d], group, d); return st ? ATT_STATUS[st].label : ""; })
-      ])];
-      downloadCsv(`${group.name}_출결_${range.from}_${range.to}.csv`, csv);
-    };
-    $$("[data-detail]", body).forEach(tr => tr.onclick = () => {
-      const sid = tr.dataset.detail;
-      const list = dates.map(d => {
-        const rec = records[sid]?.[d];
-        return `<div class="history-row"><span>${fmtDateKey(d)}</span><span>${fmtTime(rec?.at)}</span>${statusChip(effectiveStatus(rec, group, d))}</div>${rec?.note ? `<div class="item-meta right">${esc(rec.note)}</div>` : ""}`;
-      }).join("");
-      modal({ title: `${studentMap[sid]?.name || sid} 출결`, html: list || "<p>기록이 없습니다.</p>" });
-    });
-  };
-
-  // ---- 명단·설정 ----
-  const drawMembers = async () => {
-    const students = await getStudents();
-    const members = memberList();
-    body.innerHTML = `
-      <div class="form-card">
-        <div class="field"><span>반 전체 추가</span>
-          <div class="roll-bar">
-            <select id="addGrade"><option value="">학년</option>${gradeOptions(students).map(g => `<option>${g}</option>`).join("")}</select>
-            <select id="addClass"><option value="">반</option></select>
-            <button class="btn small ghost" id="btnAddClass">추가</button>
-          </div>
-        </div>
-        <label class="field"><span>학번으로 추가 (여러 명은 띄어쓰기·쉼표·줄바꿈으로 구분)</span>
-          <textarea id="addSids" rows="3" placeholder="10101 10102 10205"></textarea>
-        </label>
-        <div class="btn-row end"><button class="btn small primary" id="btnAddSids">명단에 추가</button></div>
-      </div>
-
-      <div class="section-head"><h3>명단 (${members.length}명)</h3></div>
-      <div class="member-grid">
-        ${members.map(m => `<div class="member-chip"><span>${esc(m.sid)} ${esc(m.name)}</span><button data-remove="${esc(m.sid)}" aria-label="제외">✕</button></div>`).join("") || emptyState("명단이 비어 있습니다.")}
-      </div>
-
-      <div class="section-head"><h3>그룹 설정</h3></div>
-      <div class="btn-row">
-        <button class="btn small ghost" id="btnEditGroup">✏️ 이름·요일·시간 수정</button>
-        <button class="btn small ghost" id="btnToggleActive">${group.active === false ? "▶️ 다시 운영" : "⏹ 운영 종료"}</button>
-        <button class="btn small ghost danger" id="btnDeleteGroup">🗑 삭제</button>
-      </div>`;
-
-    $("#addGrade", body).onchange = e => {
-      $("#addClass", body).innerHTML = `<option value="">반</option>` + classOptions(students, e.target.value).map(c => `<option>${c}</option>`).join("");
-    };
-    const addMembers = async sids => {
-      if (!sids.length) return toast("추가할 학생이 없습니다.");
-      const updates = {};
-      sids.forEach(sid => { updates[sid] = true; });
-      await grpRef.child("members").update(updates);
-      toast(`${sids.length}명을 추가했습니다.`);
-    };
-    $("#btnAddClass", body).onclick = () => {
-      const g = $("#addGrade", body).value, c = $("#addClass", body).value;
-      if (!g || !c) return toast("학년과 반을 선택하세요.");
-      addMembers(students.filter(s => s.grade === g && s.cls === c).map(s => s.sid));
-    };
-    $("#btnAddSids", body).onclick = () => {
-      const tokens = $("#addSids", body).value.split(/[\s,]+/).filter(Boolean);
-      const unknown = tokens.filter(t => !studentMap[t]);
-      if (unknown.length) toast(`계정이 없는 학번 제외: ${unknown.join(", ")}`);
-      addMembers(tokens.filter(t => studentMap[t]));
-    };
-    $$("[data-remove]", body).forEach(b => b.onclick = async () => {
-      const sid = b.dataset.remove;
-      if (!(await confirmBox("명단 제외", `${sid} ${esc(studentMap[sid]?.name || "")} 학생을 명단에서 뺄까요?<br>(기존 출결 기록은 남습니다)`))) return;
-      await grpRef.child(`members/${sid}`).remove();
-    });
-    $("#btnEditGroup", body).onclick = () => groupDialog(group);
-    $("#btnToggleActive", body).onclick = async () => {
-      const resume = group.active === false;
-      await grpRef.child("active").set(resume);
-      toast(resume ? "다시 운영합니다." : "운영을 종료했습니다.");
-    };
-    $("#btnDeleteGroup", body).onclick = async () => {
-      if (Object.keys(records).length) {
-        modal({ title: "삭제할 수 없음", html: "<p>출결 기록이 있는 그룹은 삭제할 수 없습니다.<br>대신 <b>운영 종료</b>를 사용하세요.</p>" });
-        return;
-      }
-      if (!(await confirmBox("그룹 삭제", `'${esc(group.name)}' 그룹을 삭제할까요?`, "삭제"))) return;
-      await grpRef.remove();
-      go("#/att");
-    };
-  };
-
-  const draw = () => {
-    if (tab === "roll") drawRoll();
-    else if (tab === "stats") drawStats();
-    else drawMembers();
-  };
-
-  $$(".tab", main).forEach(t => t.onclick = () => {
-    $$(".tab", main).forEach(x => x.classList.toggle("active", x === t));
-    tab = t.dataset.tab;
+  const sessionRef = db.ref(`portal/att/sessions/${gid}/${today}`);
+  const onRecs = recRef.on("value", s => { records = s.val() || {}; draw(); });
+  const onSession = sessionRef.on("value", s => {
+    const v = s.val();
+    supervisor = v && typeof v === "object" && v.uid ? v : null;
     draw();
   });
-  drawHead();
-
-  // 실시간 반영: 학생이 체크인하면 출석부가 바로 갱신됩니다.
-  const onRecs = recRef.on("value", s => { records = s.val() || {}; if (tab !== "members") draw(); });
-  const onGrp = grpRef.on("value", s => { if (s.val()) { group = { ...s.val(), id: gid }; drawHead(); draw(); } });
-  onLeave(() => { recRef.off("value", onRecs); grpRef.off("value", onGrp); });
+  onLeave(() => { recRef.off("value", onRecs); sessionRef.off("value", onSession); });
 }
 
-// 체크인 코드 + QR (교실 화면·프로젝터에 띄우는 용도)
+// 체크인 코드 (학생에게 불러 주는 4자리 번호)
 async function openCodeDialog(group, date) {
   const codeRef = db.ref(`portal/att/codes/${group.id}/${date}`);
   let timer = null;
 
+  const sessionRef = db.ref(`portal/att/sessions/${group.id}/${date}`);
+  const markSession = async () => {
+    // 그날 운영했다는 표시 (통계·학생 출결의 기준 날짜). 감독교사 기록은 덮어쓰지 않습니다.
+    if (!(await sessionRef.once("value")).exists()) {
+      await sessionRef.update({ uid: session.profile.uid, name: session.profile.name, at: serverTime });
+    }
+  };
   const issue = async () => {
-    const code = String(Math.floor(Math.random() * 10000)).padStart(4, "0");
-    const data = { code, expiresAt: serverNow() + CHECKIN_CODE_MINUTES * 60000, createdBy: session.profile.name };
-    await codeRef.set(data);
+    const data = {
+      code: String(Math.floor(Math.random() * 10000)).padStart(4, "0"),
+      expiresAt: serverNow() + CHECKIN_CODE_MINUTES * 60000,
+      createdBy: session.profile.name
+    };
+    await guard("체크인 코드 발급", async () => { await codeRef.set(data); await markSession(); });
     return data;
   };
 
   let current = await codeRef.once("value").then(s => s.val());
   if (!current || current.expiresAt < serverNow()) current = await issue();
+  else await markSession();
 
   await modal({
     title: `${group.name} · ${fmtDateKey(date)}`,
-    wide: true,
     okText: "닫기",
     html: `
       <div class="code-screen">
-        <div id="qrBox" class="qr-box"></div>
         <div>
           <div class="item-meta">체크인 코드</div>
           <div id="bigCode" class="big-code"></div>
           <div id="codeLeft" class="item-meta"></div>
-          <button class="btn small ghost" id="btnNewCode">🔄 새 코드 발급</button>
-          ${date !== dateKey() ? `<p class="warn-text">⚠️ 오늘이 아닌 날짜입니다. 학생 체크인은 오늘 날짜만 가능합니다.</p>` : ""}
+          <button class="btn small ghost" id="btnNewCode" style="margin-top:10px">🔄 새 코드 발급</button>
         </div>
       </div>`,
     onOpen: box => {
-      const paint = () => {
-        $("#bigCode", box).textContent = current.code;
-        const qrBox = $("#qrBox", box);
-        qrBox.innerHTML = "";
-        if (window.QRCode) new QRCode(qrBox, { text: checkinUrl(group.id, date, current.code), width: 220, height: 220, correctLevel: QRCode.CorrectLevel.M });
-        else qrBox.textContent = "QR 라이브러리를 불러오지 못했습니다.";
-      };
+      const paint = () => { $("#bigCode", box).textContent = current.code; };
       const tick = () => {
         const left = Math.max(0, current.expiresAt - serverNow());
-        const min = Math.floor(left / 60000), sec = Math.floor(left / 1000) % 60;
-        $("#codeLeft", box).textContent = left ? `남은 시간 ${min}:${String(sec).padStart(2, "0")}` : "만료됨 — 새 코드를 발급하세요";
+        $("#codeLeft", box).textContent = left
+          ? `남은 시간 ${Math.floor(left / 60000)}:${String(Math.floor(left / 1000) % 60).padStart(2, "0")}`
+          : "만료됨 — 새 코드를 발급하세요";
         if (!box.isConnected) clearInterval(timer);
       };
       paint(); tick();
@@ -592,11 +617,208 @@ async function openCodeDialog(group, date) {
   clearInterval(timer);
 }
 
-// 학생 프로필(교사)용 출결 요약
-export async function loadStudentAttendance(sid) {
-  const groups = (await loadGroups()).filter(g => g.members?.[sid]);
-  const recs = await Promise.all(groups.map(g => readVal(`portal/att/records/${g.id}/${sid}`)));
-  return groups.map((g, i) => ({ group: g, records: recs[i] || {}, counts: countStatuses(recs[i], g) }));
+// ---------------- 교사: 통계 ----------------
+export async function renderGroupStats(main, { gid }, alive) {
+  if (!isTeacher()) { go("#/att"); return; }
+  setTitle("🟰 출결 통계", "#/att/stats");
+  const [group, records, sessions, studentMap] = await Promise.all([
+    readVal(`portal/att/groups/${gid}`), readVal(`portal/att/records/${gid}`), loadSessions(gid), null
+  ]).then(async ([g, r, se]) => [g, r, se, await getStudentMap(g?.year || schoolYear())]);
+  if (!alive()) return;
+  if (!group) { main.innerHTML = emptyState("반을 찾을 수 없습니다."); return; }
+  group.id = gid;
+
+  const range = { from: dateKey(), to: dateKey() };   // 기본은 오늘 하루
+
+  main.innerHTML = `
+    <div class="page wide">
+      <div class="info-card">
+        <div class="item-top"><span class="badge type-${group.type}">${esc(ATT_TYPES[group.type]?.label || "")}</span><span class="item-meta">${esc(cardSchedule(group))}</span></div>
+        <h2 class="info-title">${esc(group.name)}</h2>
+      </div>
+      <div class="roll-bar">
+        <input type="date" id="stFrom" value="${range.from}"> ~ <input type="date" id="stTo" value="${range.to}">
+        <button class="btn small ghost" id="btnStatCsv">CSV</button>
+      </div>
+      <div id="statBody"></div>
+    </div>`;
+
+  const draw = () => {
+    const dates = sessionDates(sessions, range.from, range.to);
+    const rows = Object.keys(group.members || {}).sort(sidCompare).map(sid => {
+      const c = countStatuses(records?.[sid], group, dates);
+      const attended = c.present + c.late + c.early;
+      return { sid, name: studentMap[sid]?.name || "", c, rate: dates.length ? Math.round(attended / dates.length * 100) : 0 };
+    });
+
+    $("#statBody", main).innerHTML = `
+      <p class="item-meta">기간 내 운영일 <b>${dates.length}</b>일 (감독교사 확인이 된 날만) · 출석률 = (출석+지각+조퇴) / 운영일</p>
+      ${dates.length ? `
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>학번</th><th>이름</th>${Object.values(ATT_STATUS).map(s => `<th>${s.label}</th>`).join("")}<th>출석률</th></tr></thead>
+            <tbody>
+              ${rows.map(r => `<tr data-detail="${esc(r.sid)}">
+                <td>${esc(r.sid)}</td><td class="left">${esc(r.name)}</td>
+                ${Object.keys(ATT_STATUS).map(k => `<td class="${r.c[k] && k !== "present" ? "warn" : ""}">${r.c[k]}</td>`).join("")}
+                <td><b>${r.rate}%</b></td>
+              </tr>`).join("")}
+            </tbody>
+          </table>
+        </div>` : emptyState("이 기간에 운영한 날이 없습니다.")}`;
+
+    $$("[data-detail]", main).forEach(tr => tr.onclick = () => {
+      const sid = tr.dataset.detail;
+      modal({
+        title: `${studentMap[sid]?.name || sid} 출결`,
+        html: dates.map(d => {
+          const rec = records?.[sid]?.[d];
+          return `<div class="history-row"><span>${fmtDateKey(d)}</span><span>${fmtTime(rec?.at)}</span>${statusChip(effectiveStatus(rec, group, d))}</div>
+                  ${rec?.note ? `<div class="item-meta right">${esc(rec.note)}</div>` : ""}`;
+        }).join("")
+      });
+    });
+
+    $("#btnStatCsv", main).onclick = () => downloadCsv(`${group.name}_출결_${range.from}_${range.to}.csv`, [
+      ["학번", "이름", ...Object.values(ATT_STATUS).map(s => s.label), "출석률", ...dates],
+      ...rows.map(r => [r.sid, r.name, ...Object.keys(ATT_STATUS).map(k => r.c[k]), r.rate + "%",
+        ...dates.map(d => ATT_STATUS[effectiveStatus(records?.[r.sid]?.[d], group, d)].label)])
+    ]);
+  };
+
+  $("#stFrom", main).onchange = e => { range.from = e.target.value; draw(); };
+  $("#stTo", main).onchange = e => { range.to = e.target.value; draw(); };
+  draw();
 }
 
-export { statusChip, scheduleText };
+// ---------------- 학생 ----------------
+// 학생이 이 반에 속했는가: 그 반 학년도에 쓰던 학번이 명단에 있는지로 봅니다.
+const mySidIn = g => sidInYear(session.profile, g.year || schoolYear());
+const isNowGroup = g => g.active !== false && isCurrentYear(session.profile, g.year || schoolYear(), schoolYear());
+
+async function renderStudentList(main, alive) {
+  setTitle("🕘 출석");
+  const mine = (await loadGroups()).filter(g => { const sid = mySidIn(g); return sid && g.members?.[sid]; });
+  if (!alive()) return;
+  const now = mine.filter(isNowGroup);
+  const past = mine.filter(g => !isNowGroup(g)).sort((a, b) => Number(b.year) - Number(a.year));
+
+  const card = g => `
+    <a class="item-card" href="#/att/g/${g.id}">
+      <div class="item-top">
+        <span class="badge type-${g.type}">${esc(ATT_TYPES[g.type]?.label || "")}</span>
+        ${isNowGroup(g) && runsOn(g) ? '<span class="badge st-open">오늘 운영</span>' : ""}
+        ${isNowGroup(g) ? "" : `<span class="badge st-closed">${esc(g.year || "")}학년도</span>`}
+        <span class="item-meta">${esc(cardSchedule(g))}</span>
+      </div>
+      <div class="item-title">${esc(g.name)}</div>
+    </a>`;
+
+  main.innerHTML = `
+    <div class="page">
+      ${now.length ? `<div class="card-list">${now.map(card).join("")}</div>`
+        : emptyState("참여 중인 방과후·야간자율이 없습니다.\n담당 선생님께 명단 등록을 요청하세요.")}
+      ${past.length ? `
+        <div class="section-head"><h3>지난 출결</h3><span class="item-meta">보기만 가능</span></div>
+        <div class="card-list">${past.map(card).join("")}</div>` : ""}
+    </div>`;
+}
+
+async function renderStudentGroup(main, group, alive) {
+  setTitle(group.name, "#/att");
+  const sid = mySidIn(group);
+  if (!sid || !group.members?.[sid]) { main.innerHTML = emptyState("이 반 명단에 없습니다."); return; }
+  const now = isNowGroup(group);
+
+  main.innerHTML = `
+    <div class="page">
+      <div class="info-card">
+        <div class="item-top">
+          <span class="badge type-${group.type}">${esc(ATT_TYPES[group.type]?.label || "")}</span>
+          ${now ? (runsOn(group) ? '<span class="badge st-open">오늘 운영</span>' : "") : `<span class="badge st-closed">${esc(group.year || "")}학년도</span>`}
+          <span class="item-meta">${esc(cardSchedule(group))}</span>
+        </div>
+        <h2 class="info-title">${esc(group.name)}</h2>
+      </div>
+      ${now ? "" : `<p class="page-desc">지난 학년도(${esc(group.year || "")}) 반입니다. 출결 기록만 볼 수 있습니다.</p>`}
+      <div class="menu-grid">
+        ${now ? `
+        <button class="menu-card" id="btnCheckin" style="--accent:#34a853">
+          <span class="menu-icon">✅</span><span class="menu-label">출석하기</span>
+          <span class="menu-desc">선생님이 불러 주는 코드 입력</span>
+        </button>` : ""}
+        <button class="menu-card" id="btnMine" style="--accent:#4285f4">
+          <span class="menu-icon">📖</span><span class="menu-label">나의 출결</span>
+          <span class="menu-desc">지각·조퇴·결석 확인</span>
+        </button>
+      </div>
+    </div>`;
+
+  $("#btnCheckin", main)?.addEventListener("click", () => checkinDialog(group));
+  $("#btnMine", main).onclick = () => myAttendanceDialog(group, sid);
+}
+
+function checkinDialog(group) {
+  const date = dateKey();
+  return modal({
+    title: `${group.name} 출석하기`,
+    html: `<p>선생님이 알려 주는 4자리 코드를 입력하세요.</p>
+           <input id="ciCode" class="code-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="0000">`,
+    okText: "출석", cancelText: "취소",
+    onOpen: box => setTimeout(() => $("#ciCode", box).focus(), 50),
+    beforeOk: async box => {
+      const code = $("#ciCode", box).value.trim();
+      if (!/^\d{4}$/.test(code)) throw new Error("4자리 숫자를 입력하세요.");
+      const at = await doCheckin(group, date, code);
+      const late = isLate(at, group, date);
+      alertBox("출석완료", late ? "✅ 출석완료<br><b style='color:#f9ab00'>지각입니다.</b>" : "✅ 출석완료");
+    }
+  });
+}
+
+async function doCheckin(group, date, code) {
+  const sid = session.profile.sid;
+  const path = `portal/att/records/${group.id}/${sid}/${date}`;
+  try {
+    await db.ref(path).set({ status: "present", at: serverTime, by: "student", code });
+  } catch (err) {
+    const existing = await readVal(path).catch(() => null);
+    if (existing) throw new Error("이미 오늘 출결이 기록되어 있습니다.");
+    throw new Error("코드가 틀렸거나 만료되었습니다. 선생님께 확인하세요.");
+  }
+  return (await readVal(path))?.at || serverNow();
+}
+
+async function myAttendanceDialog(group, sid) {
+  const [records, sessions] = await Promise.all([readVal(`portal/att/records/${group.id}/${sid}`), loadSessions(group.id)]);
+  const dates = sessionDates(sessions);
+  const counts = countStatuses(records, group, dates);
+  const problems = dates.filter(d => effectiveStatus(records?.[d], group, d) !== "present");
+
+  modal({
+    title: `${group.name} 나의 출결`,
+    html: `
+      <div class="stat-line">${Object.entries(ATT_STATUS).map(([k, s]) => `<span style="color:${s.color}">${s.label} <b>${counts[k]}</b></span>`).join("")}</div>
+      <p class="item-meta">감독교사 확인이 된 운영일 ${dates.length}일 기준입니다.</p>
+      ${problems.length ? problems.map(d => {
+        const rec = records?.[d];
+        return `<div class="history-row"><span>${fmtDateKey(d)}</span><span>${fmtTime(rec?.at)}</span>${statusChip(effectiveStatus(rec, group, d))}</div>
+                ${rec?.note ? `<div class="item-meta right">${esc(rec.note)}</div>` : ""}`;
+      }).join("") : `<p>지각·조퇴·결석 기록이 없습니다. 👍</p>`}`
+  });
+}
+
+// 학생별 모아보기(교사)용 요약. person = { sid, sids } — 반마다 그 해 학번으로 찾습니다.
+export async function loadStudentAttendance(person) {
+  const groups = (await loadGroups())
+    .map(g => ({ g, sid: sidInYear(person, g.year || schoolYear()) }))
+    .filter(x => x.sid && x.g.members?.[x.sid]);
+  const data = await Promise.all(groups.map(async ({ g, sid }) => {
+    const [records, sessions] = await Promise.all([readVal(`portal/att/records/${g.id}/${sid}`), loadSessions(g.id)]);
+    const dates = sessionDates(sessions);
+    return { group: g, dates, counts: countStatuses(records, g, dates) };
+  }));
+  return data;
+}
+
+export { cardSchedule, statusChip };

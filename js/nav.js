@@ -13,6 +13,8 @@ export function runCleanups() {
 
 export function setTitle(title, backHash = "#/home") {
   $("#pageTitle").textContent = title;
+  // 홈 버튼은 첫 화면에서만 감춥니다.
+  $("#homeBtn").hidden = !backHash;
   const back = $("#backBtn");
   back.hidden = !backHash;
   back.onclick = () => {

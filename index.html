@@ -12,13 +12,12 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/style.css?v=1">
+  <link rel="stylesheet" href="css/style.css?v=3">
 
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" defer></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" defer></script>
 </head>
 <body>
   <!-- 첫 로딩 -->
@@ -45,13 +44,20 @@
   <!-- 앱 -->
   <section id="appView" hidden>
     <header class="topbar">
-      <button id="backBtn" class="icon-btn" aria-label="뒤로" hidden>
-        <svg viewBox="0 0 24 24"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>
-      </button>
-      <div id="pageTitle" class="page-title"></div>
-      <div class="user-chip" id="userChip" role="button" tabindex="0">
-        <span id="userName"></span>
-        <span id="userRole" class="role-badge"></span>
+      <div class="topbar-left">
+        <button id="backBtn" class="icon-btn" aria-label="뒤로" hidden>
+          <svg viewBox="0 0 24 24"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4L10.8 12z"/></svg>
+        </button>
+        <div id="pageTitle" class="page-title"></div>
+      </div>
+      <a id="homeBtn" class="icon-btn home-btn" href="#/home" aria-label="홈" title="첫 화면">
+        <svg viewBox="0 0 24 24"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+      </a>
+      <div class="topbar-right">
+        <div class="user-chip" id="userChip" role="button" tabindex="0">
+          <span id="userName"></span>
+          <span id="userRole" class="role-badge"></span>
+        </div>
       </div>
     </header>
     <main id="main"></main>
@@ -63,7 +69,7 @@
     <div id="loadingText">처리 중...</div>
   </div>
 
-  <script type="module" src="js/app.js?v=1"></script>
+  <script type="module" src="js/app.js?v=2"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('sw.js').catch(() => {});

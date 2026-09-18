@@ -23,8 +23,9 @@ const routes = [
   ["submit/:pid/:subId", programs.renderSubmitForm],
   ["sub/:pid/:sid/:subId", programs.renderSubmission],
   ["att", attendance.renderAttendance],
+  ["att/:mode", attendance.renderAttendance],
   ["att/g/:gid", attendance.renderGroup],
-  ["checkin/:gid/:date/:code", attendance.renderCheckinLink],
+  ["att/stats/:gid", attendance.renderGroupStats],
   ["english", english.renderEnglish],
   ["grades", grades.renderGrades],
   ["grades/:sid", grades.renderGrades],
@@ -67,6 +68,8 @@ async function route() {
 }
 
 // 앱 안에서 이동한 기록인지 표시 → 뒤로가기 버튼이 history.back() 을 쓸 수 있게
+// 앱을 새로 열면 이전에 보던 화면 주소가 남아 있어도 항상 첫 화면에서 시작합니다.
+if (location.hash && location.hash !== "#/home") history.replaceState({ root: true }, "", location.pathname + location.search);
 // (처음 연 페이지 기록은 root 로 표시해 두고, 이후 해시 이동으로 생긴 기록만 inApp)
 if (!history.state) history.replaceState({ root: true }, "");
 window.addEventListener("hashchange", () => {
@@ -155,18 +158,9 @@ function showView(name) {
   $("#appView").hidden = name !== "app";
 }
 
-// QR 체크인 링크로 들어왔는데 로그인 전이면 로그인 후 이어서 처리
-const PENDING_KEY = "portal_pending_hash";
-function rememberPendingHash() {
-  if (location.hash.startsWith("#/checkin/")) {
-    try { sessionStorage.setItem(PENDING_KEY, location.hash); } catch {}
-  }
-}
-
 auth.onAuthStateChanged(async user => {
   if (!user) {
     session.profile = null;
-    rememberPendingHash();
     showView("login");
     return;
   }
@@ -177,11 +171,7 @@ auth.onAuthStateChanged(async user => {
     $("#userRole").textContent = p.role === "teacher" ? "교사" : p.sid;
     showView("app");
     if (p.mustChangePw) await changePasswordDialog(true);
-
-    let pending = null;
-    try { pending = sessionStorage.getItem(PENDING_KEY); sessionStorage.removeItem(PENDING_KEY); } catch {}
-    if (pending && pending !== location.hash) location.hash = pending;
-    else route();
+    route();
   } catch (err) {
     toast(err.message);
     showView("login");

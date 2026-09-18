@@ -17,8 +17,69 @@ const MAX_FILE_MB  = 10;
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 const SHEET_NAME = "계정";
-const COL = { TYPE: 1, ID: 2, NAME: 3, GRADE: 4, CLASS: 5, NO: 6, PW: 7, STATUS: 8, UID: 9, GOOGLE: 10 };
 const HEADERS = ["구분(학생/교사)", "ID(학번/교사ID)", "이름", "학년", "반", "번호", "초기 비밀번호", "상태", "UID(자동)", "학교 Google 계정"];
+const HEADER_KEYS = ["TYPE", "ID", "NAME", "GRADE", "CLASS", "NO", "PW", "STATUS", "UID", "GOOGLE"];
+// 열 위치는 1행의 헤더 이름으로 찾습니다. 그래서 "2025년" 같은 연도 열을 어디에 끼워 넣어도 됩니다.
+// 헤더를 못 찾으면 기본 위치(A~J)를 씁니다.
+let COL = defaultCols_();
+
+function defaultCols_() {
+  const c = { YEARS: [], LAST: HEADERS.length };
+  HEADER_KEYS.forEach((k, i) => { c[k] = i + 1; });
+  return c;
+}
+
+// 연도 열: 헤더가 "2025년" 꼴인 열. 그 해에 이 학생이 쓰던 학번을 적습니다.
+const YEAR_HEADER = /^(\d{4})년$/;
+
+function loadCols_(sh) {
+  const width = Math.max(sh.getLastColumn(), HEADERS.length);
+  const header = sh.getRange(1, 1, 1, width).getDisplayValues()[0].map(h => String(h).trim());
+  const c = defaultCols_();
+  HEADER_KEYS.forEach((k, i) => { const at = header.indexOf(HEADERS[i]); if (at >= 0) c[k] = at + 1; });
+  c.YEARS = header.map((h, i) => ({ m: h.match(YEAR_HEADER), col: i + 1 }))
+    .filter(x => x.m).map(x => ({ year: Number(x.m[1]), col: x.col }));
+  c.LAST = width;
+  COL = c;
+  return c;
+}
+
+// 빠진 기본 헤더만 채웁니다(이미 있는 열·연도 열은 건드리지 않음).
+function ensureHeaders_(sh) {
+  const cols = loadCols_(sh);
+  const width = Math.max(sh.getLastColumn(), HEADERS.length);
+  const header = sh.getRange(1, 1, 1, width).getDisplayValues()[0].map(h => String(h).trim());
+  HEADERS.forEach((name, i) => {
+    if (header.indexOf(name) >= 0) return;
+    const def = i + 1;
+    const at = !header[def - 1] ? def : sh.getLastColumn() + 1;
+    sh.getRange(1, at).setValue(name);
+    header[at - 1] = name;
+  });
+  sh.getRange(1, 1, 1, sh.getLastColumn()).setFontWeight("bold").setBackground("#e8f0fe");
+  return loadCols_(sh);
+}
+
+// 연도 열을 찾고, 없으면 맨 오른쪽에 새로 만듭니다.
+function yearCol_(sh, year) {
+  const cols = loadCols_(sh);
+  const found = cols.YEARS.find(y => y.year === Number(year));
+  if (found) return found.col;
+  const at = sh.getLastColumn() + 1;
+  sh.getRange(1, at).setValue(year + "년").setFontWeight("bold").setBackground("#fef7e0");
+  sh.getRange(2, at, Math.max(sh.getMaxRows() - 1, 1), 1).setNumberFormat("@");
+  loadCols_(sh);
+  return at;
+}
+
+// 지금 B열 학번이 속한 학년도. [📅 새 학년도 준비] 가 스크립트 속성 CURRENT_SCHOOL_YEAR 로 정해 두며,
+// 없으면 날짜로 계산합니다(3월~ 이듬해 2월).
+function currentSchoolYear_() {
+  const saved = Number(PropertiesService.getScriptProperties().getProperty("CURRENT_SCHOOL_YEAR"));
+  if (saved) return saved;
+  const d = new Date();
+  return d.getMonth() + 1 <= 2 ? d.getFullYear() - 1 : d.getFullYear();
+}
 const CATEGORY_LABELS = { bitnada: "빛나다프로그램", club: "동아리", subject: "교과", contest: "심화탐구대회" };
 
 // =======================================================
@@ -36,7 +97,13 @@ function onOpen() {
     .addItem("⛔ 선택한 행 사용 중지", "disableSelected")
     .addItem("✅ 선택한 행 사용 재개", "enableSelected")
     .addSeparator()
+    .addItem("🎓 선택한 행 졸업시트로 이관", "graduateSelected")
+    .addItem("📅 새 학년도 준비 (학번 바꾸기 전에 실행)", "prepareNewYear")
+    .addSeparator()
     .addItem("🔧 제출자료 저장 구조 변환 (업데이트 후 1회)", "migrateSubmissionsByProgram")
+    .addSeparator()
+    .addItem("🧹 만든 사람별 자료 보기", "listPortalOwners")
+    .addItem("🧹 특정 교사가 만든 자료 삭제", "deletePortalDataByOwner")
     .addToUi();
 }
 
@@ -57,7 +124,7 @@ function getSheet_() {
 function setupSheet() {
   if (!requireAdmin_()) return;
   const sh = getSheet_();
-  sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight("bold").setBackground("#e8f0fe");
+  ensureHeaders_(sh);
   sh.setFrozenRows(1);
   // 학번·비밀번호가 숫자로 바뀌어 앞자리 0 이 사라지지 않도록 텍스트 서식
   sh.getRange(2, COL.ID, sh.getMaxRows() - 1, 1).setNumberFormat("@");
@@ -132,8 +199,9 @@ function loginEmail_(loginId) {
 // =======================================================
 // [계정] 시트 읽기
 // =======================================================
-function readRows_(onlySelected) {
+function readRows_(onlySelected, includeNoId) {
   const sh = getSheet_();
+  const cols = loadCols_(sh);
   const last = sh.getLastRow();
   if (last < 2) return [];
   let rowNumbers = [];
@@ -143,19 +211,22 @@ function readRows_(onlySelected) {
     });
     rowNumbers = [...new Set(rowNumbers)];
   }
-  const values = sh.getRange(2, 1, last - 1, HEADERS.length).getDisplayValues();
+  const values = sh.getRange(2, 1, last - 1, cols.LAST).getDisplayValues();
+  const cell = (v, k) => String(v[cols[k] - 1] || "").trim();
   return values.map((v, i) => ({
     row: i + 2,
-    role: v[COL.TYPE - 1].trim() === "교사" ? "teacher" : (v[COL.TYPE - 1].trim() === "학생" ? "student" : ""),
-    loginId: v[COL.ID - 1].trim(),
-    name: v[COL.NAME - 1].trim(),
-    grade: v[COL.GRADE - 1].trim(),
-    cls: v[COL.CLASS - 1].trim(),
-    no: v[COL.NO - 1].trim(),
-    pw: v[COL.PW - 1],
-    uid: v[COL.UID - 1].trim(),
-    googleEmail: v[COL.GOOGLE - 1].trim().toLowerCase()
-  })).filter(r => r.loginId && (!onlySelected || rowNumbers.includes(r.row)));
+    role: cell(v, "TYPE") === "교사" ? "teacher" : (cell(v, "TYPE") === "학생" ? "student" : ""),
+    loginId: cell(v, "ID"),
+    name: cell(v, "NAME"),
+    grade: cell(v, "GRADE"),
+    cls: cell(v, "CLASS"),
+    no: cell(v, "NO"),
+    pw: v[cols.PW - 1],
+    uid: cell(v, "UID"),
+    googleEmail: cell(v, "GOOGLE").toLowerCase(),
+    // 지난 학년도 학번: { 2025: "10101", ... }
+    years: Object.fromEntries(cols.YEARS.map(y => [y.year, String(v[y.col - 1] || "").trim()]).filter(([, sid]) => sid))
+  })).filter(r => (includeNoId ? (r.loginId || r.uid) : r.loginId) && (!onlySelected || rowNumbers.includes(r.row)));
 }
 
 function setStatus_(sh, row, status, uid) {
@@ -163,9 +234,17 @@ function setStatus_(sh, row, status, uid) {
   if (uid) sh.getRange(row, COL.UID).setValue(uid);
 }
 
+// 학생의 연도별 학번 { 학번: 학년도 } — 앱과 보안 규칙이 "그 해에 그 학번이었는지"를 여기서 확인합니다.
+function sidsOf_(r, currentYear) {
+  const sids = {};
+  Object.keys(r.years || {}).forEach(y => { sids[r.years[y]] = Number(y); });
+  if (r.loginId) sids[r.loginId] = currentYear;   // 지금 학번이 가장 우선
+  return Object.keys(sids).length ? sids : null;
+}
+
 function profileOf_(r) {
   const p = { role: r.role, loginId: r.loginId, name: r.name, active: true, googleEmail: r.googleEmail || null };
-  if (r.role === "student") Object.assign(p, { sid: r.loginId, grade: r.grade, cls: r.cls, no: r.no });
+  if (r.role === "student") Object.assign(p, { sid: r.loginId, grade: r.grade, cls: r.cls, no: r.no, sids: sidsOf_(r, currentSchoolYear_()) });
   return p;
 }
 
@@ -175,8 +254,8 @@ function profileOf_(r) {
 function syncAccounts() {
   if (!requireAdmin_()) return;
   const sh = getSheet_();
-  // 예전에 만든 시트에는 새 열 제목이 없으므로 채워 둠
-  sh.getRange(1, 1, 1, HEADERS.length).setValues([HEADERS]).setFontWeight("bold").setBackground("#e8f0fe");
+  // 예전에 만든 시트에는 새 열 제목이 없으므로 채워 둠 (연도 열은 그대로)
+  ensureHeaders_(sh);
   const rows = readRows_(false);
   const started = Date.now();
   let created = 0, updated = 0, failed = 0;
@@ -190,27 +269,54 @@ function syncAccounts() {
     const found = toolkitCall_("accounts:lookup", { localId: withUid.slice(i, i + 100).map(r => r.uid) });
     (found.users || []).forEach(u => { authEmail[u.localId] = u.email; });
   }
+  // 같은 ID 가 두 번 적혀 있으면 둘 다 멈춤
+  const idCount = {};
+  rows.forEach(r => { idCount[r.loginId.toLowerCase()] = (idCount[r.loginId.toLowerCase()] || 0) + 1; });
+
+  const ready = [];
   withUid.forEach(r => {
     if (!r.role) { setStatus_(sh, r.row, "❌ 구분 오류"); failed++; return; }
     if (r.googleEmail && !isEmail_(r.googleEmail)) { setStatus_(sh, r.row, "❌ 학교 Google 계정 형식 오류"); failed++; return; }
     if (!/^[a-zA-Z0-9._-]+$/.test(r.loginId)) { setStatus_(sh, r.row, "❌ ID는 영문·숫자만"); failed++; return; }
+    if (idCount[r.loginId.toLowerCase()] > 1) { setStatus_(sh, r.row, "❌ 같은 ID 가 시트에 두 번 있음"); failed++; return; }
     if (!authEmail[r.uid]) { setStatus_(sh, r.row, "❌ 인증 계정 없음 (UID 칸을 지우고 다시 실행)"); failed++; return; }
+    ready.push(r);
+  });
+
+  // 학년도가 바뀌면 전교생 학번이 한꺼번에 바뀝니다(20101 → 30101 인데 30101 을 아직 다른 계정이 쓰는 등).
+  // 그래서 ID 가 바뀌는 계정을 먼저 모두 임시 ID 로 옮긴 뒤, 새 ID 를 줍니다.
+  const changes = ready.filter(r => authEmail[r.uid] !== loginEmail_(r.loginId));
+  const failedIds = {};
+  const runUpdates = (list, emailOf) => {
+    for (let i = 0; i < list.length; i += 50) {
+      const chunk = list.slice(i, i + 50);
+      UrlFetchApp.fetchAll(chunk.map(r => toolkitRequest_("accounts:update", { localId: r.uid, email: emailOf(r) })))
+        .forEach((res, j) => {
+          const json = JSON.parse(res.getContentText() || "{}");
+          if (json.error) failedIds[chunk[j].uid] = json.error.message;
+        });
+    }
+  };
+  runUpdates(changes, r => "tmp-" + r.uid.toLowerCase() + "@" + EMAIL_DOMAIN);
+  runUpdates(changes.filter(r => !failedIds[r.uid]), r => loginEmail_(r.loginId));
+  // 새 ID 를 못 받은 계정은 원래 ID 로 되돌려 둡니다(임시 ID 로 남으면 로그인이 안 됨).
+  const restore = changes.filter(r => failedIds[r.uid]);
+  if (restore.length) runUpdates(restore, r => authEmail[r.uid]);
+
+  ready.forEach(r => {
     let status = "✅ 정보 반영";
-    const oldId = authEmail[r.uid].split("@")[0];
     if (authEmail[r.uid] !== loginEmail_(r.loginId)) {
-      try {
-        toolkitCall_("accounts:update", { localId: r.uid, email: loginEmail_(r.loginId) });
-        status = "✅ ID 변경 (" + oldId + " → " + r.loginId + ")";
-      } catch (e) {
-        const msg = String(e.message).indexOf("EMAIL_EXISTS") === 0 ? "이미 다른 계정이 쓰는 ID" : e.message;
+      if (failedIds[r.uid]) {
+        const msg = String(failedIds[r.uid]).indexOf("EMAIL_EXISTS") === 0 ? "이미 다른 계정이 쓰는 ID" : failedIds[r.uid];
         setStatus_(sh, r.row, "❌ ID 변경 실패: " + msg);
         failed++;
         return;
       }
+      status = "✅ ID 변경 (" + authEmail[r.uid].split("@")[0] + " → " + r.loginId + ")";
     }
     const p = profileOf_(r);
     Object.keys(p).forEach(k => { if (k !== "active") patch[r.uid + "/" + k] = p[k]; });
-    if (r.role === "teacher") ["sid", "grade", "cls", "no"].forEach(k => { patch[r.uid + "/" + k] = null; });
+    if (r.role === "teacher") ["sid", "grade", "cls", "no", "sids"].forEach(k => { patch[r.uid + "/" + k] = null; });
     setStatus_(sh, r.row, status);
     updated++;
   });
@@ -332,16 +438,20 @@ function importStudentsFromRecord() {
     UrlFetchApp.fetchAll(chunk.map(id => ({ url: dbUrl_("students/" + id + "/name"), muteHttpExceptions: true })))
       .forEach(res => names.push(JSON.parse(res.getContentText() || "null") || ""));
   }
+  const cols = ensureHeaders_(sh);
   const rows = newIds.map((id, i) => {
     let g = "", c = "", n = "";
     if (/^\d{5}$/.test(id)) { g = id[0]; c = String(Number(id.slice(1, 3))); n = String(Number(id.slice(3))); }
     else if (/^\d{4}$/.test(id)) { g = id[0]; c = id[1]; n = String(Number(id.slice(2))); }
-    return ["학생", id, names[i], g, c, n, "", "", "", ""];
+    const row = new Array(cols.LAST).fill("");
+    row[cols.TYPE - 1] = "학생"; row[cols.ID - 1] = id; row[cols.NAME - 1] = names[i];
+    row[cols.GRADE - 1] = g; row[cols.CLASS - 1] = c; row[cols.NO - 1] = n;
+    return row;
   });
   const start = Math.max(sh.getLastRow(), 1) + 1;
-  sh.getRange(start, COL.ID, rows.length, 1).setNumberFormat("@");
-  sh.getRange(start, COL.PW, rows.length, 1).setNumberFormat("@");
-  sh.getRange(start, 1, rows.length, HEADERS.length).setValues(rows);
+  sh.getRange(start, cols.ID, rows.length, 1).setNumberFormat("@");
+  sh.getRange(start, cols.PW, rows.length, 1).setNumberFormat("@");
+  sh.getRange(start, 1, rows.length, cols.LAST).setValues(rows);
   ui.alert(rows.length + "명을 추가했습니다.\n학년·반·번호는 학번에서 추정한 값이니 확인 후 초기 비밀번호를 채워주세요.");
 }
 
@@ -628,4 +738,211 @@ function migrateSubmissionsByProgram() {
   if (ok !== ui.Button.OK) return;
   dbPut_("portal/submissions", result);
   ui.alert("완료: " + moved + "건 변환, " + kept + "건 유지");
+}
+
+// =======================================================
+// 🧹 정리 도구 — 없어진 교사 계정이 만든 프로그램·출석 반을 지웁니다.
+//  앱에서는 만든 교사만 지울 수 있어서, 계정을 지운 뒤에는 앱으로 정리할 수 없습니다.
+// =======================================================
+function portalOwnerStats_() {
+  const groups = dbGet_("portal/att/groups") || {};
+  const programs = dbGet_("portal/programs") || {};
+  const stats = {};
+  const bump = (uid, name, field) => {
+    const key = uid || "(등록 교사 정보 없음)";
+    stats[key] = stats[key] || { name: name || "", groups: 0, programs: 0 };
+    if (name && !stats[key].name) stats[key].name = name;
+    stats[key][field]++;
+  };
+  Object.values(groups).forEach(g => bump(g.createdByUid, g.createdBy, "groups"));
+  Object.values(programs).forEach(p => bump(p.createdByUid, p.createdBy, "programs"));
+  return stats;
+}
+
+function listPortalOwners() {
+  if (!requireAdmin_()) return;
+  const stats = portalOwnerStats_();
+  const lines = Object.keys(stats).map(uid =>
+    `• ${stats[uid].name || "(이름 없음)"}  |  UID: ${uid}\n   출석 반 ${stats[uid].groups}개 · 프로그램 ${stats[uid].programs}개`);
+  SpreadsheetApp.getUi().alert("만든 사람별 자료",
+    (lines.length ? lines.join("\n\n") : "자료가 없습니다.") +
+    "\n\n지우려면 [🧹 특정 교사가 만든 자료 삭제] 를 실행하고 위 UID 나 이름을 입력하세요.",
+    SpreadsheetApp.getUi().ButtonSet.OK);
+}
+
+function deletePortalDataByOwner() {
+  if (!requireAdmin_()) return;
+  const ui = SpreadsheetApp.getUi();
+  const ask = ui.prompt("자료 삭제",
+    "지울 자료를 만든 교사의 UID 또는 이름을 입력하세요.\n(먼저 [🧹 만든 사람별 자료 보기] 로 확인하세요)",
+    ui.ButtonSet.OK_CANCEL);
+  if (ask.getSelectedButton() !== ui.Button.OK) return;
+  const key = ask.getResponseText().trim();
+  if (!key) return;
+
+  const groups = dbGet_("portal/att/groups") || {};
+  const programs = dbGet_("portal/programs") || {};
+  const submissions = dbGet_("portal/submissions") || {};
+  const match = obj => obj && (obj.createdByUid === key || obj.createdBy === key);
+
+  const gids = Object.keys(groups).filter(id => match(groups[id]));
+  const pids = Object.keys(programs).filter(id => match(programs[id]));
+
+  let subCount = 0, fileCount = 0;
+  const fileIds = [];
+  pids.forEach(pid => {
+    Object.values(submissions[pid] || {}).forEach(bySid => {
+      Object.values(bySid || {}).forEach(sub => {
+        subCount++;
+        (sub.files || []).forEach(f => { if (f && f.id) { fileIds.push(f.id); fileCount++; } });
+      });
+    });
+  });
+
+  if (!gids.length && !pids.length) { ui.alert("해당하는 자료가 없습니다: " + key); return; }
+
+  const summary =
+    `[${key}] 이(가) 만든 자료를 지웁니다.\n\n` +
+    `• 출석 반 ${gids.length}개: ${gids.map(id => groups[id].name).join(", ") || "-"}\n` +
+    `   (그 반의 출결 기록·운영일·체크인 코드도 함께 삭제)\n` +
+    `• 프로그램 ${pids.length}개: ${pids.map(id => programs[id].title).join(", ") || "-"}\n` +
+    `   (학생 제출자료 ${subCount}건, 첨부 파일 ${fileCount}개도 함께 삭제)\n\n` +
+    `되돌릴 수 없습니다. 계속할까요?`;
+  if (ui.alert("⚠️ 삭제 확인", summary, ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
+
+  gids.forEach(id => {
+    dbDelete_("portal/att/records/" + id);
+    dbDelete_("portal/att/sessions/" + id);
+    dbDelete_("portal/att/codes/" + id);
+    dbDelete_("portal/att/groups/" + id);
+  });
+  pids.forEach(id => {
+    dbDelete_("portal/submissions/" + id);
+    dbDelete_("portal/programs/" + id);
+  });
+  let trashed = 0;
+  fileIds.forEach(fid => {
+    try { DriveApp.getFileById(fid).setTrashed(true); trashed++; } catch (e) { /* 이미 지워진 파일 */ }
+  });
+
+  ui.alert("삭제 완료",
+    `출석 반 ${gids.length}개, 프로그램 ${pids.length}개(제출자료 ${subCount}건)를 지웠습니다.\n첨부 파일 ${trashed}개를 휴지통으로 옮겼습니다.`,
+    ui.ButtonSet.OK);
+}
+
+function dbDelete_(path) {
+  const res = UrlFetchApp.fetch(dbUrl_(path), { method: "delete", muteHttpExceptions: true });
+  if (res.getResponseCode() !== 200) throw new Error("DB 삭제 실패(" + path + "): " + res.getContentText());
+}
+
+// =======================================================
+// 📅 새 학년도 준비
+//  지금 ID 열(학번)을 "○○○○년" 열로 복사해 두고, 현재 학년도를 다음 해로 바꿉니다.
+//  그다음 ID·학년·반·번호를 새 학번으로 고치고 ② 를 실행하면, 학생마다 연도별 학번이 이어집니다.
+// =======================================================
+function prepareNewYear() {
+  if (!requireAdmin_()) return;
+  const ui = SpreadsheetApp.getUi();
+  const now = currentSchoolYear_();
+  const ask = ui.prompt("📅 새 학년도 준비",
+    "⚠️ ID 열을 새 학번으로 바꾸기 전에 실행하세요.\n\n" +
+    "지금 ID 열의 학번은 몇 학년도 학번인가요? (기본: " + now + ")\n" +
+    "그 학번을 \"" + now + "년\" 같은 연도 열로 복사하고, 현재 학년도를 다음 해로 바꿉니다.\n\n" +
+    "※ 졸업생은 먼저 [🎓 선택한 행 졸업시트로 이관] 으로 옮기세요.", ui.ButtonSet.OK_CANCEL);
+  if (ask.getSelectedButton() !== ui.Button.OK) return;
+  const year = Number(ask.getResponseText().trim() || now);
+  if (!(year > 2000 && year < 2100)) { ui.alert("학년도를 4자리 숫자로 입력하세요."); return; }
+
+  const sh = getSheet_();
+  const col = yearCol_(sh, year);
+  const cols = loadCols_(sh);
+  let copied = 0;
+  readRows_(false).filter(r => r.role === "student").forEach(r => {
+    const cell = sh.getRange(r.row, col);
+    if (String(cell.getDisplayValue()).trim()) return;          // 이미 적혀 있으면 그대로
+    cell.setNumberFormat("@").setValue(r.loginId);
+    copied++;
+  });
+  PropertiesService.getScriptProperties().setProperty("CURRENT_SCHOOL_YEAR", String(year + 1));
+  ui.alert("📅 새 학년도 준비 완료",
+    copied + "명의 학번을 \"" + year + "년\" 열에 복사했고, 현재 학년도를 " + (year + 1) + " 로 바꿨습니다.\n\n" +
+    "이제 ID(학번)·학년·반·번호를 " + (year + 1) + "학년도 값으로 고친 뒤 [② 계정 생성 · 정보 반영] 을 실행하세요.\n" +
+    "로그인 ID 는 새 학번으로 바뀌고, 비밀번호와 지난 자료는 그대로 이어집니다.",
+    ui.ButtonSet.OK);
+}
+
+// =======================================================
+// 🎓 선택한 행 졸업시트로 이관
+//  - 지금 학번을 연도 열에 남기고 ID 열을 비웁니다.
+//  - 로그인을 막고, 로그인 ID 를 비워 다음 학생이 그 학번을 쓸 수 있게 합니다.
+//  - 행을 졸업년도 이름의 시트로 옮깁니다. (기록은 선생님들이 통계·모아보기에서 계속 봅니다)
+// =======================================================
+function graduateSelected() {
+  if (!requireAdmin_()) return;
+  const ui = SpreadsheetApp.getUi();
+  const sh = getSheet_();
+  const rows = readRows_(true, true).filter(r => r.role === "student" && r.uid);
+  if (!rows.length) { ui.alert("UID 가 있는 학생 행을 선택하세요."); return; }
+
+  const ask = ui.prompt("🎓 졸업시트로 이관 (" + rows.length + "명)", "졸업년도를 입력하세요. 이 이름의 시트로 옮깁니다. (예: 2027)", ui.ButtonSet.OK_CANCEL);
+  if (ask.getSelectedButton() !== ui.Button.OK) return;
+  const gradYear = ask.getResponseText().trim();
+  if (!/^\d{4}$/.test(gradYear)) { ui.alert("졸업년도를 4자리 숫자로 입력하세요."); return; }
+  const sidYear = currentSchoolYear_();
+
+  const ok = ui.alert("🎓 졸업 이관 확인",
+    rows.length + "명을 \"" + gradYear + "\" 시트로 옮깁니다.\n\n" +
+    "• ID 열의 학번은 \"" + sidYear + "년\" 열에 남기고 ID 열을 비웁니다 (이미 연도 열에 있으면 그대로)\n" +
+    "• 포털 로그인을 막습니다\n" +
+    "• 지난 활동·출결 기록은 선생님들이 계속 볼 수 있습니다\n\n계속할까요?", ui.ButtonSet.YES_NO);
+  if (ok !== ui.Button.YES) return;
+
+  // 1) 지금 학번을 연도 열에 기록
+  const col = yearCol_(sh, sidYear);
+  rows.forEach(r => {
+    if (!r.loginId) return;
+    const already = Object.values(r.years || {}).indexOf(r.loginId) >= 0;
+    if (!already) { sh.getRange(r.row, col).setNumberFormat("@").setValue(r.loginId); r.years[sidYear] = r.loginId; }
+  });
+
+  // 2) 로그인 막기 + 로그인 ID 비우기(졸업 전용 ID 로 옮김)
+  const patch = {};
+  for (let i = 0; i < rows.length; i += 50) {
+    const chunk = rows.slice(i, i + 50);
+    UrlFetchApp.fetchAll(chunk.map(r => toolkitRequest_("accounts:update",
+      { localId: r.uid, email: "grad-" + r.uid.toLowerCase() + "@" + EMAIL_DOMAIN, disableUser: true })));
+  }
+  rows.forEach(r => {
+    const sids = sidsOf_(Object.assign({}, r, { loginId: "" }), sidYear);
+    Object.assign(patch, {
+      [r.uid + "/active"]: false, [r.uid + "/sid"]: null, [r.uid + "/loginId"]: null,
+      [r.uid + "/graduated"]: Number(gradYear), [r.uid + "/sids"]: sids
+    });
+  });
+  dbPatch_("users", patch);
+
+  // 3) ID 열 비우고 상태 표시
+  const cols = loadCols_(sh);
+  rows.forEach(r => {
+    sh.getRange(r.row, cols.ID).setValue("");
+    sh.getRange(r.row, cols.STATUS).setValue("🎓 " + gradYear + " 졸업");
+  });
+
+  // 4) 졸업년도 시트로 옮기기 (헤더 이름을 맞춰서 붙임)
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const target = ss.getSheetByName(gradYear) || ss.insertSheet(gradYear);
+  const srcHeader = sh.getRange(1, 1, 1, cols.LAST).getDisplayValues()[0].map(h => String(h).trim());
+  let tgtHeader = target.getLastColumn() ? target.getRange(1, 1, 1, target.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim()) : [];
+  srcHeader.forEach(h => { if (h && tgtHeader.indexOf(h) < 0) tgtHeader.push(h); });
+  target.getRange(1, 1, 1, tgtHeader.length).setValues([tgtHeader]).setFontWeight("bold").setBackground("#e8f0fe");
+  target.setFrozenRows(1);
+
+  const sorted = rows.slice().sort((a, b) => a.row - b.row);
+  const values = sorted.map(r => sh.getRange(r.row, 1, 1, cols.LAST).getDisplayValues()[0]);
+  const out = values.map(v => tgtHeader.map(h => { const i = srcHeader.indexOf(h); return i >= 0 ? v[i] : ""; }));
+  const start = Math.max(target.getLastRow(), 1) + 1;
+  target.getRange(start, 1, out.length, tgtHeader.length).setNumberFormat("@").setValues(out);
+  sorted.slice().reverse().forEach(r => sh.deleteRow(r.row));
+
+  ui.alert("🎓 완료", rows.length + "명을 \"" + gradYear + "\" 시트로 옮기고 로그인을 막았습니다.", ui.ButtonSet.OK);
 }

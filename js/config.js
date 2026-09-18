@@ -47,15 +47,36 @@ export const ATT_TYPES = {
   night:       { label: "야간자율" }
 };
 
+// 교시·시간은 고정입니다. 화면에는 이름(7교시·자율1 …)만 보여 주고 시각은 지각 판정에만 씁니다.
+export const ATT_PERIODS = {
+  p7: { label: "7교시", start: "15:50", end: "16:40" },
+  p8: { label: "8교시", start: "16:50", end: "17:40" },
+  s1: { label: "자율1", start: "18:30", end: "20:00" },
+  s2: { label: "자율2", start: "20:15", end: "22:00" }
+};
+
+// 구분별로 요일마다 운영할 수 있는 교시 (1=월 … 5=금)
+export const ATT_DAY_PERIODS = {
+  afterschool: { 1: ["p8"], 2: ["p8"], 3: ["p7", "p8"], 4: ["p7", "p8"], 5: ["p7"] },
+  night:       { 1: ["s1", "s2"], 2: ["s1", "s2"], 3: ["s1", "s2"], 4: ["s1", "s2"], 5: ["p8", "s1"] }
+};
+
 export const ATT_STATUS = {
   present: { label: "출석", short: "출", color: "#34a853" },
   late:    { label: "지각", short: "지", color: "#f9ab00" },
   early:   { label: "조퇴", short: "조", color: "#fa7b17" },
-  excused: { label: "인정결", short: "인", color: "#4285f4" },
   absent:  { label: "결석", short: "결", color: "#ea4335" }
 };
 
+// 야간자율은 각 학년 1반 학생만 대상입니다 (학년을 고르면 이 반 학생이 자동 등록)
+export const NIGHT_CLASS = "1";
+
 // 체크인 코드 유효 시간(분)
 export const CHECKIN_CODE_MINUTES = 30;
-// 시작 시각 이후 이 시간(분)이 지나 체크인하면 '지각'으로 표시
-export const LATE_AFTER_MINUTES = 10;
+// 첫 교시 시작 시각 이후 이 시간(분)이 지나 체크인하면 '지각'
+export const LATE_AFTER_MINUTES = 15;
+
+// 동아리 활동 시간 (고정 안내용)
+export const CLUB_SCHEDULE = { day: 3, label: "매주 수요일 5교시 (13:40~14:30)" };
+// 제출 시작일·마감일을 쓰는 카테고리 (빛나다·동아리는 그날 활동을 바로 기록)
+export const CATEGORY_HAS_PERIOD = { contest: true, subject: true };
