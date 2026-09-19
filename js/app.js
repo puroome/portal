@@ -161,7 +161,7 @@ function renderHome(main) {
 // ---------------- 사용자 메뉴 ----------------
 function openUserMenu() {
   modal({
-    title: session.profile.name,
+    title: "",                   // 이름 줄 없이 메뉴만 (사용자 요청)
     html: `
       <div class="menu-list">
         <button class="list-btn" data-menu="pw"><svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10.5" rx="2.6"/><path d="M8.2 10.5V7.6a3.8 3.8 0 0 1 7.6 0v2.9"/><circle cx="12" cy="15.2" r="1.2" fill="currentColor" stroke="none"/><path d="M12 16v2"/></svg>PW 변경</button>

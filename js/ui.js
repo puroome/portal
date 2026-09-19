@@ -31,7 +31,7 @@ export function modal({ title = "알림", html = "", okText = "확인", cancelTe
     overlay.innerHTML = `
       <div class="modal-box ${wide ? "wide" : ""} ${className}">
         ${closeX ? `<button class="modal-x" data-act="cancel" aria-label="닫기">✕</button>` : ""}
-        <div class="modal-title">${esc(title)}</div>
+        ${title ? `<div class="modal-title">${esc(title)}</div>` : ""}
         <div class="modal-body">${html}</div>
         ${okText || cancelText ? `<div class="modal-btns">
           ${cancelText ? `<button class="btn ghost" data-act="cancel">${esc(cancelText)}</button>` : ""}
