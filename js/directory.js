@@ -2,7 +2,7 @@
 // 학번은 해마다 다른 학생에게 다시 쓰입니다. 그래서 지난 학년도 자료를 볼 때는 "그 해의 학번"으로 찾습니다.
 //   users/{uid}/sids = { 학번: 학년도 }  ← 계정 시트의 ID 열 + "2025년" 같은 연도 열
 import { readVal } from "./firebase.js";
-import { sidCompare, schoolYear } from "./ui.js";
+import { sidCompare, schoolYear, esc } from "./ui.js";
 import { sidInYear } from "./years.js";
 
 let usersCache = null;
@@ -78,4 +78,37 @@ export function gradeOptions(list) {
 
 export function classOptions(list, grade) {
   return [...new Set(list.filter(s => !grade || s.grade === grade).map(s => s.cls))].filter(Boolean).sort(sidCompare);
+}
+
+// ---------------- 학생 사진 카드 (학생별 모아보기·성적확인 검색 결과 공용) ----------------
+// 사진 주소는 record 앱이 쓰던 students/{학번}/photo 를 그대로 읽습니다. (record 는 올해 학번 기준)
+const photoCache = new Map();
+function studentPhoto(sid) {
+  if (!photoCache.has(sid)) photoCache.set(sid, readVal(`students/${sid}/photo`).then(v => String(v || "")).catch(() => ""));
+  return photoCache.get(sid);
+}
+
+// 사진 + 그 아래 "이름 (학번)". 사진은 그린 뒤 hydratePhotos 로 채웁니다.
+export function studentCard(s, href) {
+  return `
+    <a class="student-card" href="${href}">
+      <span class="sc-photo" data-photo-sid="${esc(s.sid)}"><span class="sc-none" aria-hidden="true">👤</span></span>
+      <span class="sc-name">${esc(s.name)} <small>(${esc(s.sid)})</small></span>
+    </a>`;
+}
+
+export function hydratePhotos(container) {
+  container.querySelectorAll("[data-photo-sid]").forEach(async box => {
+    const url = await studentPhoto(box.dataset.photoSid);
+    if (!url || !box.isConnected) return;
+    // 칸 안에 투명하게 겹쳐 붙여야 lazy 로딩이 동작합니다(숨겨 둔 lazy 이미지는 브라우저가 불러오지 않음).
+    // 다 불러오면 보이게 하고 👤 를 치우며, 실패하면 이미지를 빼서 👤 를 남깁니다.
+    const img = document.createElement("img");
+    img.alt = "";
+    img.loading = "lazy";
+    img.onload = () => { img.classList.add("on"); box.querySelector(".sc-none")?.remove(); };
+    img.onerror = () => img.remove();
+    box.appendChild(img);
+    img.src = url;
+  });
 }

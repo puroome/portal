@@ -3,7 +3,7 @@ import { isTeacher } from "./auth.js";
 import { CATEGORIES, ATT_TYPES, ATT_STATUS } from "./config.js";
 import { $, $$, esc, emptyState, sidCompare } from "./ui.js";
 import { setTitle, go } from "./nav.js";
-import { getStudents, getStudentSids, filterStudents, gradeOptions, classOptions } from "./directory.js";
+import { getStudents, getStudentSids, filterStudents, gradeOptions, classOptions, studentCard, hydratePhotos } from "./directory.js";
 import { loadAllPrograms, loadPersonSubs, renderSubmissionList, canView } from "./programs.js";
 import { loadStudentAttendance, cardSchedule } from "./attendance.js";
 
@@ -12,10 +12,12 @@ export async function renderSearch(main, params, alive) {
   setTitle("🧑‍🎓 학생별 모아보기");
   const students = await getStudents();
   if (!alive()) return;
+  const q0 = String(params?.q || "").trim();   // 홈의 [학생 찾기] 에서 넘어온 검색어
 
   main.innerHTML = `
     <div class="page">
-      <input id="sSearch" type="search" class="search-input" placeholder="학번·이름 검색 (예: 20301, 홍길동)" autocomplete="off">
+      <p class="page-desc">학번 · 이름 · x-y 형식으로 검색하세요.</p>
+      <input id="sSearch" type="search" class="search-input" placeholder="예: 3129, 홍길동, 3-1" autocomplete="off" value="${esc(q0)}">
       <div class="filter-bar">
         <select id="sGrade"><option value="">학년 선택</option>${gradeOptions(students).map(g => `<option>${g}</option>`).join("")}</select>
         <select id="sClass"><option value="">반 선택</option></select>
@@ -24,9 +26,11 @@ export async function renderSearch(main, params, alive) {
     </div>`;
 
   const draw = list => {
-    $("#sResults", main).innerHTML = list === null ? "" : list.length
-      ? list.map(s => `<a class="student-pill" href="#/student/${encodeURIComponent(s.sid)}"><b>${esc(s.name)}</b><span>${esc(s.sid)}</span></a>`).join("")
+    const box = $("#sResults", main);
+    box.innerHTML = list === null ? "" : list.length
+      ? list.map(s => studentCard(s, `#/student/${encodeURIComponent(s.sid)}`)).join("")
       : emptyState("일치하는 학생이 없습니다.");
+    hydratePhotos(box);
   };
   $("#sSearch", main).oninput = e => {
     const q = e.target.value.trim();
@@ -40,6 +44,7 @@ export async function renderSearch(main, params, alive) {
     const g = $("#sGrade", main).value;
     draw(e.target.value ? students.filter(s => s.grade === g && s.cls === e.target.value) : null);
   };
+  if (q0) draw(filterStudents(students, q0).slice(0, 100));
 }
 
 export async function renderProfile(main, { sid }, alive) {

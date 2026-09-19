@@ -66,47 +66,57 @@ export async function renderAttendance(main, { mode = "today" } = {}, alive) {
 }
 
 // ---------------- 교사: 목록 ----------------
+// 프로그램 화면과 같은 구조: 기본은 [출석체크], 오른쪽 위 버튼으로 [📊 통계]·[⚙️ 반 관리] 화면에 들어갑니다.
+// 방과후·야간자율은 폴더 탭으로 고릅니다.
 const MODES = {
-  today:  { title: "🕘 출석", desc: "오늘 출석체크할 수 있는 반입니다." },
-  manage: { title: "➗ 반편집", desc: "반 이름·요일·명단을 고치거나 운영을 끝낼 수 있습니다." },
-  stats:  { title: "🟰 통계", desc: "개설된 모든 반의 출결 통계를 볼 수 있습니다." }
+  today:  { head: "출석체크", desc: "" },
+  manage: { head: "반 관리", desc: "반을 눌러 이름·요일·명단을 고치거나 운영을 끝낼 수 있습니다." },
+  stats:  { head: "통계", desc: "개설된 모든 반의 출결 통계를 볼 수 있습니다." }
 };
 
 async function renderTeacherList(main, mode, alive) {
-  const cfg = MODES[mode] || MODES.today;
-  setTitle(cfg.title, mode === "today" ? "#/home" : "#/att");
+  if (!MODES[mode]) mode = "today";   // 출석 메뉴에 들어오면 항상 [출석체크] 부터
+  const cfg = MODES[mode];
+  setTitle("🕘 출석", mode === "today" ? "#/home" : "#/att");
   const groups = await loadGroups();
   if (!alive()) return;
 
   let type = "night";
   try { type = sessionStorage.getItem(TAB_KEY) || type; } catch {}
   let includeEnded = false;
-  let allRunning = false;
+
+  const headButtons = {
+    today:  `<a class="btn small ghost" href="#/att/stats">📊 통계</a><a class="btn small ghost" href="#/att/manage">⚙️ 반 관리</a>`,
+    manage: `<button class="btn small primary" id="btnNewGroup">+ 새 반</button>`,
+    stats:  ""
+  }[mode];
 
   main.innerHTML = `
     <div class="page">
-      <div class="tabs">
-        ${Object.entries(ATT_TYPES).map(([k, t]) => `<button class="tab" data-type="${k}">${t.label}</button>`).join("")}
+      <div class="cat-head">
+        <h3>${cfg.head}</h3>
+        ${headButtons ? `<span class="head-actions">${headButtons}</span>` : ""}
       </div>
-      <div class="btn-row">
-        <a class="btn small ghost ${mode === "today" ? "on" : ""}" href="#/att">🕘 출석</a>
-        <button class="btn small primary" id="btnNewGroup">➕ 반등록</button>
-        <a class="btn small ghost ${mode === "manage" ? "on" : ""}" href="#/att/manage">➗ 반편집</a>
-        <a class="btn small ghost ${mode === "stats" ? "on" : ""}" href="#/att/stats">🟰 통계</a>
+      <div class="folder-tabs" role="tablist">
+        ${Object.entries(ATT_TYPES).map(([k, t]) => `<button class="folder-tab" role="tab" data-type="${k}">${t.label}</button>`).join("")}
       </div>
-      <p class="page-desc">${cfg.desc}</p>
-      <div class="filter-bar" id="attFilters">
-        ${mode === "today"
-          ? `<label class="check-line small"><input type="checkbox" id="allRunning"> 운영중 수업전체</label>`
-          : `<label class="check-line small"><input type="checkbox" id="incEnded"> 종료된 수업 포함</label>`}
+      <div class="folder-panel">
+        ${cfg.desc ? `<p class="page-desc">${cfg.desc}</p>` : ""}
+        ${mode === "today" ? "" : `
+        <div class="filter-bar" id="attFilters">
+          <label class="check-line small"><input type="checkbox" id="incEnded"> 종료된 수업 포함</label>
+        </div>`}
+        <div id="groupList"></div>
       </div>
-      <div id="groupList"></div>
     </div>`;
 
   const statsState = { from: dateKey(), to: dateKey(), grade: "" };
 
   const draw = () => {
-    $$("[data-type]", main).forEach(b => b.classList.toggle("active", b.dataset.type === type));
+    $$("[data-type]", main).forEach(b => {
+      b.classList.toggle("active", b.dataset.type === type);
+      b.setAttribute("aria-selected", String(b.dataset.type === type));
+    });
     if (mode === "stats" && type === "night") {
       const filterBar = $("#attFilters", main);
       if (filterBar) filterBar.hidden = false;
@@ -114,20 +124,15 @@ async function renderTeacherList(main, mode, alive) {
       return;
     }
     const mine = g => isOwnerless(g) || g.createdByUid === session.profile.uid;
-    // 출석 화면의 [운영중 수업전체]는 방과후에서만, [종료된 수업 포함]은 반편집·통계에서만 씁니다.
-    // 이미 끝난 수업을 출석체크할 일은 없으므로 출석 화면에는 종료된 반을 아예 띄우지 않습니다.
-    const useAllRunning = mode === "today" && type === "afterschool";
-    const filterBar = $("#attFilters", main);
-    if (filterBar) filterBar.hidden = mode === "today" && !useAllRunning;
+    // 출석체크는 당일 운영하는 반만 — 다른 요일 반은 반 관리·통계에서 봅니다.
+    // [종료된 수업 포함]은 반 관리·통계에서만 씁니다(끝난 수업을 출석체크할 일은 없음).
     const showEnded = mode !== "today" && includeEnded;
-    const showAll = useAllRunning && allRunning;
     const list = groups
       .filter(g => g.type === type)
       .filter(g => showEnded || g.active !== false)
       .filter(g => {
         if (mode === "stats") return true;                        // 통계는 개설된 모든 반
         if (mode === "manage") return type === "night" || mine(g); // 편집은 야자 전체 / 방과후는 내 반
-        if (showAll) return true;                                  // 방과후: 운영중 수업전체
         return runsOn(g) && (type === "night" || mine(g));         // 오늘 운영하는 반
       })
       .sort((a, b) => (Number(b.year) - Number(a.year)) || String(a.name).localeCompare(String(b.name), "ko"));
@@ -149,12 +154,23 @@ async function renderTeacherList(main, mode, alive) {
     };
 
     // 야간자율은 8교시·자율1·자율2 묶음으로 나눠서 봅니다.
+    // 야간자율은 교시 카드 하나에 1·2·3학년을 칩으로 모읍니다. (요일은 교시마다 같아서 카드 머리에, 장소는 학년마다 달라 칩에)
+    const gradeChip = g => {
+      const locked = mode === "today" && !canManage(g);
+      const cls = `grade-chip${locked ? " locked" : ""}${g.active === false ? " ended" : ""}`;
+      const tip = locked ? "담당 교사만 출석체크" : g.active === false ? "운영 종료" : "";
+      const inner = `${esc(cardTitle(g))} <small>${Object.keys(g.members || {}).length}${g.place ? ` · ${esc(g.place)}` : ""}</small>${locked ? " 🔒" : ""}${g.active === false ? " <small>· 종료</small>" : ""}`;
+      if (mode === "manage") return `<button class="${cls}" data-edit="${g.id}"${tip ? ` title="${tip}"` : ""}>${inner}</button>`;
+      return locked ? `<span class="${cls}" title="${tip}">${inner}</span>` : `<a class="${cls}" href="#/att/g/${g.id}">${inner}</a>`;
+    };
     const grouped = () => nightPeriods().map(pk => {
       const inPeriod = list.filter(g => groupPeriodKey(g) === pk)
         .sort((a, b) => String(a.grade || a.name).localeCompare(String(b.grade || b.name), "ko"));
       return inPeriod.length
-        ? `<div class="section-head"><h3>${esc(ATT_PERIODS[pk].label)}</h3><span class="item-meta">${inPeriod.length}개 반</span></div>
-           <div class="card-list">${inPeriod.map(card).join("")}</div>`
+        ? `<div class="period-card">
+             <div class="period-head"><b>${esc(ATT_PERIODS[pk].label)}</b><span>${esc(daysText(inPeriod[0]))}</span></div>
+             <div class="grade-chips">${inPeriod.map(gradeChip).join("")}</div>
+           </div>`
         : "";
     }).join("");
 
@@ -163,7 +179,7 @@ async function renderTeacherList(main, mode, alive) {
       : emptyState(mode === "today"
       ? (type === "night"
           ? "오늘 운영하는 야간자율 반이 없습니다."
-          : "오늘 출석체크할 반이 없습니다.\n다른 요일 반을 보려면 [운영중 수업전체]를 켜세요.")
+          : "오늘 출석체크할 방과후 반이 없습니다.")
       : "등록된 반이 없습니다.");
 
     $$("[data-edit]", main).forEach(b => b.onclick = async () => {
@@ -178,11 +194,10 @@ async function renderTeacherList(main, mode, alive) {
     draw();
   });
   $("#incEnded", main)?.addEventListener("change", e => { includeEnded = e.target.checked; draw(); });
-  $("#allRunning", main)?.addEventListener("change", e => { allRunning = e.target.checked; draw(); });
-  $("#btnNewGroup", main).onclick = async () => {
+  $("#btnNewGroup", main)?.addEventListener("click", async () => {
     const id = await groupDialog({ type, year: schoolYear() }, groups);
     if (id) go(`#/att/g/${id}`);
-  };
+  });
   draw();
 }
 
@@ -294,7 +309,7 @@ function groupDialog(g, allGroups = []) {
     </div>`).join("");
 
   return modal({
-    title: isNew ? `➕ 반등록 · ${ATT_TYPES[type].label}` : `➗ 반편집 · ${esc(g.name || "")}`,
+    title: isNew ? `+ 새 반 · ${ATT_TYPES[type].label}` : `⚙️ 반 관리 · ${esc(g.name || "")}`,
     wide: true,
     html: `
       ${night ? `
@@ -424,6 +439,30 @@ export async function renderGroup(main, { gid }, alive) {
   }
 
   const today = dateKey();
+
+  // 출석체크는 그 반이 운영하는 날(당일)에만 합니다. 다른 요일·종료된 반·지난 학년도 반은 막고 통계로 안내합니다.
+  // (목록에서 숨기는 것만으로는 부족 — 학생별 모아보기의 출결 카드나 주소로도 들어올 수 있습니다)
+  const closedWhy = group.active === false ? "운영이 끝난 반입니다."
+    : Number(group.year || schoolYear()) !== schoolYear() ? `${esc(group.year)}학년도 반입니다.`
+    : !runsOn(group) ? `오늘은 이 반이 운영하지 않는 날입니다.<br>출석체크는 운영일(<b>${esc(cardSchedule(group))}</b>)에만 할 수 있습니다.`
+    : "";
+  if (closedWhy) {
+    main.innerHTML = `
+      <div class="page">
+        <div class="info-card">
+          <div class="item-top">
+            <span class="badge type-${group.type}">${esc(ATT_TYPES[group.type]?.label || "")}</span>
+            <span class="item-meta">${esc(cardSchedule(group))}</span>
+          </div>
+          <h2 class="info-title">${esc(group.name)}</h2>
+          <div class="info-meta">${fmtDateKey(today)} · 학생 ${Object.keys(group.members || {}).length}명</div>
+          <p class="closed-note">🚫 ${closedWhy}</p>
+          <div class="btn-row"><a class="btn ghost" href="#/att/stats/${gid}">📊 이 반 출결 통계 보기</a></div>
+        </div>
+      </div>`;
+    return;
+  }
+
   const studentMap = await getStudentMap(group.year || schoolYear());
   if (!alive()) return;
   let records = {};
@@ -492,7 +531,7 @@ export async function renderGroup(main, { gid }, alive) {
             <button class="st-btn memo" data-memo="${esc(m.sid)}" title="메모" ${blocked ? "disabled" : ""}>✎</button>
           </div>
         </div>`;
-    }).join("") : emptyState("명단이 비어 있습니다. [➗ 반편집]에서 학생을 추가하세요.");
+    }).join("") : emptyState("명단이 비어 있습니다. [⚙️ 반 관리]에서 학생을 추가하세요.");
 
     $$("[data-st]", main).forEach(b => b.onclick = () => setStatus(b.dataset.sid, b.dataset.st));
     $$("[data-memo]", main).forEach(b => b.onclick = () => editMemo(b.dataset.memo));
@@ -620,7 +659,7 @@ async function openCodeDialog(group, date) {
 // ---------------- 교사: 통계 ----------------
 export async function renderGroupStats(main, { gid }, alive) {
   if (!isTeacher()) { go("#/att"); return; }
-  setTitle("🟰 출결 통계", "#/att/stats");
+  setTitle("📊 출결 통계", "#/att/stats");
   const [group, records, sessions, studentMap] = await Promise.all([
     readVal(`portal/att/groups/${gid}`), readVal(`portal/att/records/${gid}`), loadSessions(gid), null
   ]).then(async ([g, r, se]) => [g, r, se, await getStudentMap(g?.year || schoolYear())]);

@@ -23,6 +23,14 @@ body {
   line-height: 1.5;
   overscroll-behavior-y: contain;
   -webkit-tap-highlight-color: transparent;
+  /* 텍스트 선택·길게 눌러 나오는 복사 메뉴 막기 (우클릭은 js/app.js) */
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+}
+/* 입력칸은 선택·붙여넣기가 되어야 글을 고칠 수 있습니다 */
+input, textarea, select, [contenteditable="true"] {
+  -webkit-user-select: text; user-select: text;
+  -webkit-touch-callout: default;
 }
 [hidden] { display: none !important; }
 a { color: var(--primary-dark); text-decoration: none; }
@@ -89,14 +97,20 @@ input[type="checkbox"] { width: auto; accent-color: var(--primary); }
   position: sticky; top: 0; z-index: 100;
   /* 왼쪽(뒤로·제목) | 가운데(홈) | 오른쪽(사용자) — 양쪽 칸 폭이 같아 홈 버튼이 정가운데에 옵니다 */
   display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 6px;
-  height: 56px; padding: 0 12px;
+  height: 56px;
+  /* 흰 띠는 화면 끝까지, 버튼들은 본문(.page) 폭 안에만 — 넓은 화면에서 양 끝으로 퍼지지 않게 */
+  padding: 0 max(12px, calc((100% - 720px) / 2));
   background: rgba(255,255,255,.95); backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line);
 }
-.topbar-left { display: flex; align-items: center; gap: 2px; min-width: 0; }
-.topbar-right { display: flex; justify-content: flex-end; min-width: 0; }
+/* 표가 있는 넓은 화면(.page.wide)에서는 상단바도 그 폭에 맞춤. 로딩 중엔 직전 폭을 유지해 들썩이지 않게 */
+body:has(.page.wide) .topbar,
+body:has(.page-loading.hold-wide) .topbar { padding-inline: max(12px, calc((100% - 1040px) / 2)); }
+/* 칸을 고정해 둡니다 — 홈 화면에서 🏠 버튼이 숨으면 사용자 칩이 가운데 칸으로 밀려 들어가던 문제 */
+.topbar-left { grid-column: 1; display: flex; align-items: center; gap: 2px; min-width: 0; }
+.topbar-right { grid-column: 3; display: flex; justify-content: flex-end; min-width: 0; }
 .page-title { flex: 1; min-width: 0; font-weight: 800; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 4px; }
-.home-btn { justify-self: center; }
+.home-btn { grid-column: 2; justify-self: center; }
 .user-chip { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 12px; border: 1px solid var(--line); border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 700; background: #fff; }
 .user-chip:hover { border-color: var(--primary); }
 .role-badge { background: var(--primary-soft); color: var(--primary-dark); border-radius: 12px; padding: 1px 8px; font-size: 12px; }
@@ -133,10 +147,57 @@ button.menu-card:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 .menu-label { font-weight: 800; font-size: 16px; }
 .menu-desc { color: var(--sub); font-size: 12px; }
 
+/* ---------- 홈 ---------- */
+/* 교사: 학생별 모아보기 검색창 (다른 메뉴를 한데 모은 기능이라 모양부터 다르게) */
+.student-find { display: flex; align-items: center; gap: 8px; background: #fff; border: 2px solid #12b5cb; border-radius: 28px;
+  padding: 4px 5px 4px 14px; margin-bottom: 12px; box-shadow: var(--shadow); }
+.student-find:focus-within { box-shadow: 0 0 0 4px rgba(18,181,203,.15); }
+.student-find input { flex: 1; min-width: 0; border: none; padding: 9px 0; background: transparent; font-size: 15px; }
+.student-find input:focus { box-shadow: none; }
+/* 청록 선 아이콘(사람) — 아래 컬러 이모지 메뉴와 달리 단색이라 "입력칸"임이 드러납니다 */
+.sf-icon { width: 21px; height: 21px; flex-shrink: 0; fill: none; stroke: #12b5cb; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.sf-go { flex-shrink: 0; width: 40px; height: 40px; border: none; border-radius: 50%; background: #12b5cb; cursor: pointer;
+  display: grid; place-items: center; }
+.sf-go svg { width: 22px; height: 22px; fill: #fff; }
+.sf-go:hover { background: #0e9aad; }
+
+/* 매일 쓰는 출석은 큰 띠로 */
+.att-banner { display: flex; align-items: center; gap: 14px; background: #1e8e3e; color: #fff; border-radius: var(--radius);
+  padding: 16px 18px; margin-bottom: 12px; box-shadow: var(--shadow); transition: transform .15s, box-shadow .15s; }
+.att-banner:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.12); }
+.ab-icon { width: 52px; height: 52px; border-radius: 14px; background: rgba(255,255,255,.22); display: grid; place-items: center;
+  font-size: 30px; line-height: 1; flex-shrink: 0; }
+.ab-text { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.ab-text b { font-size: 19px; font-weight: 800; }
+.ab-text small { font-size: 13px; opacity: .92; }
+
+/* 나머지 메뉴는 작은 카드 (휴대폰 2칸 · PC 3칸) */
+.mini-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 640px) { .mini-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.mini-card { display: flex; align-items: center; gap: 10px; min-width: 0; background: #fff; color: var(--text); border-radius: 12px;
+  padding: 12px; box-shadow: var(--shadow); transition: transform .15s, box-shadow .15s; }
+.mini-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.1); }
+.mini-icon { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; font-size: 22px; line-height: 1; flex-shrink: 0;
+  background: #f1f3f4; background: color-mix(in srgb, var(--accent) 14%, #fff); }
+.mini-text { display: flex; flex-direction: column; min-width: 0; }
+.mini-text b { font-size: 15px; font-weight: 800; }
+/* 설명은 자르지 않고 낱말 단위로 두 줄까지 (좁은 휴대폰에서 "야간자율 / 프로그램") */
+.mini-text small { font-size: 12px; line-height: 1.35; color: var(--sub); word-break: keep-all; }
+
 /* 탭 */
 .tabs { display: flex; gap: 4px; background: #fff; padding: 4px; border-radius: 12px; box-shadow: var(--shadow); margin-bottom: 12px; }
 .tab { flex: 1; padding: 10px; border: none; background: transparent; border-radius: 9px; font: inherit; font-weight: 700; color: var(--sub); cursor: pointer; }
 .tab.active { background: var(--primary-soft); color: var(--primary-dark); }
+/* 누른 뒤 남던 검은 테두리(브라우저 기본 포커스 표시) 제거.
+   두 규칙으로 나눈 이유: :focus-visible 을 모르는 브라우저는 그 규칙을 통째로 버리므로,
+   "숨기기"는 모든 브라우저가 아는 :focus 로 하고, 키보드용 표시만 :focus-visible 로 따로 줍니다. */
+button:focus, a:focus { outline: none; }
+button:focus-visible, a:focus-visible { outline: 2px solid rgba(66,133,244,.55); outline-offset: 2px; }
+.folder-tab:focus-visible { outline: none; box-shadow: inset 0 0 0 2px rgba(66,133,244,.45); }
+
+/* 프로그램(교사) 화면 머리: 제출자료 제목 + 오른쪽 [⚙️ 프로그램 관리] */
+.cat-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 2px 2px 12px; }
+.cat-head h3 { margin: 0; font-size: 18px; font-weight: 800; }
 
 .filter-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .filter-bar select, .filter-bar input { width: auto; flex: 0 1 auto; padding: 8px 10px; font-size: 14px; }
@@ -214,11 +275,18 @@ a.item-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.1); }
 
 /* 학생 검색 */
 .search-input { font-size: 16px; padding: 13px 14px; margin-bottom: 10px; }
-.student-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.student-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
 .student-results .empty { grid-column: 1 / -1; }
-.student-pill { display: flex; justify-content: space-between; align-items: center; gap: 6px; background: #fff; border-radius: 10px; padding: 10px 12px; box-shadow: var(--shadow); color: var(--text); }
-.student-pill span { color: var(--muted); font-size: 13px; }
-.student-pill:hover { outline: 2px solid var(--primary); }
+/* 학생 사진 카드 (record 앱의 사진 모아보기와 같은 3:4 사진) + 아래 "이름 (학번)" */
+.student-card { display: flex; flex-direction: column; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: var(--shadow);
+  color: var(--text); transition: transform .15s, box-shadow .15s; }
+.student-card:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.1); }
+.sc-photo { position: relative; aspect-ratio: 3 / 4; background: #f1f3f4; display: grid; place-items: center; overflow: hidden; }
+.sc-photo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .2s; }
+.sc-photo img.on { opacity: 1; }
+.sc-none { font-size: 38px; opacity: .35; }
+.sc-name { padding: 7px 4px 8px; text-align: center; font-size: 14px; font-weight: 700; line-height: 1.3; word-break: keep-all; }
+.sc-name small { color: var(--muted); font-size: 12px; font-weight: 500; }
 .profile-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 
 /* ---------- 출석 ---------- */
@@ -338,7 +406,41 @@ a.item-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.1); }
 
 /* 오늘 담당이 아니라 들어갈 수 없는 반 */
 .item-card.locked { opacity: .6; }
-.btn.ghost.on { border-color: var(--primary); color: var(--primary-dark); background: var(--primary-soft); }
+/* 출석(교사): 방과후·야간자율 폴더 탭 — 선택된 탭이 아래 흰 판과 이어져 "그 폴더를 펼친" 모양 */
+.folder-tabs { display: flex; gap: 4px; }
+.folder-tab { flex: 1; padding: 11px 10px; border: none; border-radius: 12px 12px 0 0; background: #e3e6ea; color: #80868b;
+  font: inherit; font-weight: 700; cursor: pointer; transition: background .15s, color .15s; }
+.folder-tab:hover { color: var(--sub); }
+.folder-tab.active { background: #fff; color: var(--primary-dark); }
+.folder-panel { background: #fff; border-radius: 0 0 var(--radius) var(--radius); padding: 14px 14px 16px; }
+.folder-panel .item-card { border: 1px solid var(--line); box-shadow: none; }
+.folder-panel .section-head:first-of-type { margin-top: 6px; }
+
+/* 출석부: 오늘 운영하지 않는 반 안내 */
+.closed-note { background: #fef7e0; color: #8a5a00; border-radius: 10px; padding: 11px 13px; margin: 12px 0 4px; font-size: 14px; line-height: 1.6; }
+
+/* 야간자율: 교시 카드 하나에 학년 칩 (1·2·3학년이 늘 함께 운영되므로 한 덩어리로) */
+.period-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 14px; margin-bottom: 10px; }
+.period-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 10px; }
+.period-head b { font-size: 16px; font-weight: 800; }
+.period-head span { color: var(--sub); font-size: 13px; }
+/* 칩은 카드 가로 폭을 똑같이 나눠 채웁니다 (오른쪽이 비지 않게). 장소가 길면 칩 안에서 줄바꿈 */
+.grade-chips { display: flex; gap: 8px; }
+.grade-chip { flex: 1 1 0; min-width: 0; display: inline-flex; flex-wrap: wrap; align-items: baseline; justify-content: center;
+  align-content: center; column-gap: 5px; padding: 9px 8px; border-radius: 22px; border: 1px solid #d2e3fc; text-align: center;
+  background: var(--primary-soft); color: var(--primary-dark); font: inherit; font-size: 15px; font-weight: 700; cursor: pointer;
+  transition: background .15s; }
+.grade-chip small { color: var(--sub); font-size: 12px; font-weight: 500; }
+.grade-chip:hover { background: #d2e3fc; }
+.grade-chip.locked { background: #f1f3f4; border-color: var(--line); color: var(--muted); cursor: default; }
+.grade-chip.ended { background: #fff; border-style: dashed; color: var(--muted); }
+/* 휴대폰: 여백·글자를 조금 줄여 세 칩이 한 줄에 여유 있게 */
+@media (max-width: 480px) {
+  .folder-panel { padding: 12px 12px 14px; }
+  .period-card { padding: 11px 11px 12px; }
+  .grade-chips { gap: 6px; }
+  .grade-chip { column-gap: 4px; padding: 9px 4px; font-size: 14px; }
+}
 
 /* 야간자율 통계 표 */
 .att-matrix th, .att-matrix td { min-width: 64px; }

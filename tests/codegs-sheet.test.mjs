@@ -80,9 +80,13 @@ const d = new Date();
 assert.equal(ctx.currentSchoolYear_(), d.getMonth() + 1 <= 2 ? d.getFullYear() - 1 : d.getFullYear());
 
 // ---- 3) 빠진 헤더만 채우고 연도 열은 건드리지 않음 ----
-const old = fakeSheet([["구분(학생/교사)", "ID(학번/교사ID)", "이름", "학년", "반", "번호", "초기 비밀번호", "상태", "UID(자동)", "", "2025년"]]);
+const old = fakeSheet([["구분(학생/교사)", "ID(학번/교사ID)", "이름", "학년", "반", "번호", "초기 비밀번호", "", "UID(자동)", "", "2025년"]]);
 ctx.ensureHeaders_(old);
-assert.equal(old.grid[0][9], "학교 Google 계정");
+assert.equal(old.grid[0][7], "상태");            // 빠진 칸은 제자리에 채움
+assert.equal(old.grid[0][9], "");                // 없앤 "학교 Google 계정" 열은 다시 만들지 않음
 assert.equal(old.grid[0][10], "2025년");
+
+// ---- 4) 예전 시트에 남아 있는 "학교 Google 계정" 열은 무시하고, 동기화 때 DB 의 이메일을 지움 ----
+assert.equal(ctx.profileOf_(senior).googleEmail, null);
 
 });

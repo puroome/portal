@@ -2,7 +2,7 @@
 // [설정] 학교·Firebase·Apps Script 정보 (이 파일만 고치면 됩니다)
 // =======================================================
 
-export const APP_NAME = "광남고 스쿨포털";
+export const APP_NAME = "광남고 포털";
 
 // record 앱과 같은 Firebase 프로젝트를 사용합니다 (성적 데이터 students/ 공유)
 export const firebaseConfig = {
@@ -29,14 +29,15 @@ export const MIN_PW_LENGTH = 4;
 export const MAX_FILE_MB = 10;
 
 // 활동 자료 카테고리 (메뉴 순서대로)
+// ⚠️ 키(bitnada/club/subject/contest)는 데이터에 저장되므로 바꾸지 마세요. label·desc 는 자유롭게.
 export const CATEGORIES = {
-  bitnada: { label: "빛나다프로그램", icon: "✨", color: "#f9ab00" },
-  club:    { label: "동아리",        icon: "🎨", color: "#34a853" },
-  subject: { label: "교과",          icon: "📚", color: "#4285f4" },
-  contest: { label: "심화탐구대회",   icon: "🔬", color: "#a142f4" }
+  bitnada: { label: "빛나다",   icon: "✨", color: "#f9ab00", desc: "야간자율 프로그램" },
+  club:    { label: "동아리",   icon: "🎨", color: "#34a853", desc: "정규 창체 활동" },
+  subject: { label: "교과",     icon: "📚", color: "#4285f4", desc: "정규 교과 활동" },
+  contest: { label: "심화탐구", icon: "🔬", color: "#a142f4", desc: "학기말 발표대회" }
 };
 
-// ENGLISH 메뉴의 앱 (포털 로그인으로 바로 입장 — gas/Code.gs 의 ENGLISH_APPS 와 키가 같아야 함)
+// ENGLISH 메뉴의 앱 — 새 탭에서 바로 엽니다 (각 앱의 Google 로그인·승인은 앱이 알아서)
 export const ENGLISH_APPS = {
   voca:  { label: "Voca",  icon: "🔤", desc: "학년별 어휘 학습·퀴즈", color: "#e53935", url: "https://puroome.github.io/voca/index.html" },
   novel: { label: "Novel", icon: "📖", desc: "원서 읽기·어휘·퀴즈", color: "#1e88e5", url: "https://puroome.github.io/novel/" }

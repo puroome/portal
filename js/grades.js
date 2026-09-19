@@ -3,7 +3,7 @@ import { readVal } from "./firebase.js";
 import { session, isTeacher } from "./auth.js";
 import { $, $$, esc, modal, emptyState } from "./ui.js";
 import { setTitle, go, onLeave } from "./nav.js";
-import { getStudents, filterStudents } from "./directory.js";
+import { getStudents, filterStudents, studentCard, hydratePhotos } from "./directory.js";
 
 let scoreData = [];
 let chart = null;
@@ -47,15 +47,17 @@ async function renderTeacherSearch(main, alive) {
   if (!alive()) return;
   main.innerHTML = `
     <div class="page">
-      <p class="page-desc">학번·이름 또는 "2-3"(2학년 3반) 형식으로 검색하세요.</p>
-      <input id="gSearch" type="search" class="search-input" placeholder="예: 20301, 홍길동, 2-3" autocomplete="off">
+      <p class="page-desc">학번 · 이름 · x-y 형식으로 검색하세요.</p>
+      <input id="gSearch" type="search" class="search-input" placeholder="예: 3129, 홍길동, 3-1" autocomplete="off">
       <div id="gResults" class="student-results"></div>
     </div>`;
   const draw = q => {
     const list = q.trim() ? filterStudents(students, q).slice(0, 100) : [];
-    $("#gResults", main).innerHTML = q.trim()
-      ? (list.length ? list.map(s => `<a class="student-pill" href="#/grades/${encodeURIComponent(s.sid)}"><b>${esc(s.name)}</b><span>${esc(s.sid)}</span></a>`).join("") : emptyState("일치하는 학생이 없습니다."))
+    const box = $("#gResults", main);
+    box.innerHTML = q.trim()
+      ? (list.length ? list.map(s => studentCard(s, `#/grades/${encodeURIComponent(s.sid)}`)).join("") : emptyState("일치하는 학생이 없습니다."))
       : "";
+    hydratePhotos(box);
   };
   const input = $("#gSearch", main);
   input.oninput = e => draw(e.target.value);

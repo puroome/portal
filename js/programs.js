@@ -1,4 +1,4 @@
-// 활동 자료 모듈: 빛나다프로그램 · 동아리 · 교과 · 심화탐구대회
+// 활동 자료 모듈: 빛나다 · 동아리 · 교과 · 심화탐구
 // 데이터 구조
 //   portal/programs/{pid}                : { category, year, title, description, grades{1:true}, startDate, endDate, closed, allowFiles, private, createdBy, createdByUid, createdAt }
 //   portal/submissions/{pid}/{sid}/{id}  : { programId, category, year, sid, name, grade, cls, no, title, content, files[], createdAt, updatedAt, feedback, feedbackBy, feedbackAt }
@@ -119,11 +119,13 @@ const accessBadge = p => (isOwner(p) ? `<span class="badge st-soon">내 담당</
 const byNewest = (a, b) => (b.createdAt || 0) - (a.createdAt || 0);
 
 // ---------------- 카테고리 화면 ----------------
-export async function renderCategory(main, { cat }, alive) {
+// 교사는 제출자료가 기본 화면이고, 프로그램 관리는 [⚙️ 프로그램 관리] 버튼으로 들어가는 별도 화면(#/p/{cat}/manage)입니다.
+export async function renderCategory(main, { cat, mode }, alive) {
   const c = CATEGORIES[cat];
   if (!c) { go("#/home"); return; }
-  setTitle(`${c.icon} ${c.label}`);
-  if (isTeacher()) return renderTeacherCategory(main, cat, alive);
+  const manage = isTeacher() && mode === "manage";
+  setTitle(manage ? `${c.icon} ${c.label} · 프로그램 관리` : `${c.icon} ${c.label}`, manage ? `#/p/${cat}` : "#/home");
+  if (isTeacher()) return renderTeacherCategory(main, cat, alive, manage);
   return renderStudentCategory(main, cat, alive);
 }
 
@@ -154,7 +156,7 @@ async function renderStudentCategory(main, cat, alive) {
     </div>`;
 }
 
-async function renderTeacherCategory(main, cat, alive) {
+async function renderTeacherCategory(main, cat, alive, manage = false) {
   // 다른 교사의 비공개 프로그램은 목록에서도 보이지 않음
   const programs = (await loadPrograms(cat)).filter(canView);
   const [subs, students] = await Promise.all([loadProgramsSubs(programs), getStudents()]);
@@ -162,14 +164,15 @@ async function renderTeacherCategory(main, cat, alive) {
   const programsById = Object.fromEntries(programs.map(p => [p.id, p]));
   const years = [...new Set([schoolYear(), ...programs.map(p => Number(p.year))])].filter(Boolean).sort((a, b) => b - a);
 
-  const state = { tab: "subs", year: String(schoolYear()), pid: "", grade: "", cls: "", q: "", view: "list" };
+  const state = { tab: manage ? "progs" : "subs", year: String(schoolYear()), pid: "", grade: "", cls: "", q: "", view: "list" };
 
   main.innerHTML = `
     <div class="page wide">
-      <div class="tabs">
-        <button class="tab active" data-tab="subs">제출자료 검색</button>
-        <button class="tab" data-tab="progs">프로그램 관리</button>
-      </div>
+      ${manage ? "" : `
+      <div class="cat-head">
+        <h3>제출자료</h3>
+        <a class="btn small ghost" href="#/p/${cat}/manage">⚙️ 프로그램 관리</a>
+      </div>`}
       <div class="filter-bar">
         <select id="fYear">${years.map(y => `<option value="${y}">${y}학년도</option>`).join("")}<option value="">전체 학년도</option></select>
         <select id="fProgram" class="subs-only"></select>
@@ -246,11 +249,6 @@ async function renderTeacherCategory(main, cat, alive) {
     };
   };
 
-  $$(".tab", main).forEach(t => t.onclick = () => {
-    $$(".tab", main).forEach(x => x.classList.toggle("active", x === t));
-    state.tab = t.dataset.tab;
-    draw();
-  });
   $("#fYear", main).onchange = e => { state.year = e.target.value; fillProgramSelect(); draw(); };
   $("#fProgram", main).onchange = e => { state.pid = e.target.value; draw(); };
   $("#fGrade", main).onchange = e => { state.grade = e.target.value; state.cls = ""; fillClassSelect(); draw(); };
