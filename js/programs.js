@@ -703,7 +703,7 @@ export async function renderSubmitForm(main, { pid, subId, aid }, alive) {
         ${allowFiles ? `
           <div class="field"><span>첨부 파일 (사진·PDF·한글 등, 파일당 최대 10MB)</span>
             <div id="fileList" class="file-list"></div>
-            <label class="file-pick">📎 파일 선택<input type="file" id="sFiles" multiple hidden></label>
+            <label class="file-pick">🍒 파일 선택<input type="file" id="sFiles" multiple hidden></label>
           </div>` : ""}
         <button class="btn primary block" id="btnSave">${subId ? "수정 저장" : "제출하기"}</button>
       </div>
