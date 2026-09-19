@@ -100,7 +100,7 @@ export async function renderProfile(main, { sid }, alive) {
 
   const drawSubs = () => {
     const list = catFilter ? (byCat[catFilter] || []) : subs;
-    renderSubmissionList($("#profileSubs", main), list.sort((a, b) => sidCompare(a.category, b.category) || (a.createdAt || 0) - (b.createdAt || 0)), programsById, "student");
+    renderSubmissionList($("#profileSubs", main), list.sort((a, b) => sidCompare(a.category, b.category) || (a.createdAt || 0) - (b.createdAt || 0)), programsById, "profile");
   };
   $$("[data-cat]", main).forEach(b => b.onclick = () => {
     catFilter = b.dataset.cat;

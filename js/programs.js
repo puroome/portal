@@ -460,8 +460,10 @@ export async function renderProgram(main, { pid }, alive) {
   const memberN = program.members ? Object.keys(program.members).length : 0;
 
   // 반 머리 (메뉴 색) — 교사: 인원·자유 기록 / 학생: 담당 선생님
-  const head = extra => `
+  // actions: 만든 교사에게만 오른쪽 위 [수정 · 종료/재개 · 삭제] (이모지 없이, 사용자 요청)
+  const head = (extra, actions = "") => `
     <div class="prog-head">
+      ${actions}
       <div class="item-top">${teacher || isCurrentYear(session.profile, program.year || schoolYear(), schoolYear())
         ? statusBadge(program) : `<span class="badge st-closed">지난 학년도</span>`}${teacher ? accessBadge(program) : ""}<span class="item-meta">${esc(extra)}</span></div>
       <h2 class="prog-title">${esc(program.title)}</h2>
@@ -527,7 +529,12 @@ export async function renderProgram(main, { pid }, alive) {
   main.innerHTML = `
     <div class="page">
       <div class="prog-shell cat-${program.category}">
-        ${head([periodText(program), targetText(program), program.freeLog ? "자유기록" : ""].filter(Boolean).join(" · "))}
+        ${head([periodText(program), targetText(program), program.freeLog ? "자유기록" : ""].filter(Boolean).join(" · "),
+          owner ? `<div class="prog-actions">
+            <button class="al-mini" id="btnEdit">수정</button>
+            <button class="al-mini" id="btnClose">${program.closed ? "재개" : "종료"}</button>
+            <button class="al-mini danger" id="btnDelete">삭제</button>
+          </div>` : "")}
         <div class="prog-body">
           ${program.freeLog || free.length ? `
             <button class="free-box free-btn" data-pick="__free">
@@ -545,12 +552,7 @@ export async function renderProgram(main, { pid }, alive) {
           </div>
         </div>
       </div>
-      ${owner ? `
-      <div class="btn-row">
-        <button class="btn small ghost" id="btnEdit">✏️ 수정</button>
-        <button class="btn small ghost" id="btnClose">${program.closed ? "🔓 다시 운영" : "🔒 운영 종료"}</button>
-        <button class="btn small ghost danger" id="btnDelete">🗑 삭제</button>
-      </div>` : `<p class="item-meta">열람만 가능합니다. 관리는 담당 교사(${esc(program.createdBy || "")})가 합니다.</p>`}
+      ${owner ? "" : `<p class="item-meta">열람만 가능합니다. 관리는 담당 교사(${esc(program.createdBy || "")})가 합니다.</p>`}
       <div class="result-head">
         <span>제출 <b id="subCount">${subs.length}</b>건</span>
         <span class="head-actions">
