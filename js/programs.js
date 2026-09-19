@@ -167,17 +167,17 @@ async function renderTeacherCategory(main, cat, alive, manage = false) {
   const state = { tab: manage ? "progs" : "subs", year: String(schoolYear()), pid: "", grade: "", cls: "", q: "", view: "list" };
 
   main.innerHTML = `
-    <div class="page wide">
+    <div class="page">
       ${manage ? "" : `
       <div class="cat-head">
         <h3>제출자료</h3>
-        <a class="btn small ghost" href="#/p/${cat}/manage">⚙️ 프로그램 관리</a>
+        <a class="btn small ghost" href="#/p/${cat}/manage">⚙️ 관리</a>
       </div>`}
-      <div class="filter-bar">
-        <select id="fYear">${years.map(y => `<option value="${y}">${y}학년도</option>`).join("")}<option value="">전체 학년도</option></select>
-        <select id="fProgram" class="subs-only"></select>
+      <div class="filter-bar prog-filter">
+        <select id="fYear">${years.map(y => `<option value="${y}">${String(y).slice(2)}학년도</option>`).join("")}<option value="">전 학년도</option></select>
         <select id="fGrade" class="subs-only"><option value="">전 학년</option>${gradeOptions(students).map(g => `<option value="${g}">${g}학년</option>`).join("")}</select>
-        <select id="fClass" class="subs-only"><option value="">전체 반</option></select>
+        <select id="fClass" class="subs-only"><option value="">전 반</option></select>
+        <select id="fProgram" class="subs-only"></select>
         <input id="fQuery" class="subs-only grow" type="search" placeholder="이름·학번·제목·내용 검색">
       </div>
       <div id="catBody"></div>
@@ -187,13 +187,13 @@ async function renderTeacherCategory(main, cat, alive, manage = false) {
 
   const fillProgramSelect = () => {
     const list = programs.filter(p => !state.year || String(p.year) === state.year).sort(byNewest);
-    $("#fProgram", main).innerHTML = `<option value="">전체 프로그램</option>` +
+    $("#fProgram", main).innerHTML = `<option value="">전 프로그램</option>` +
       list.map(p => `<option value="${p.id}">${esc(p.title)}</option>`).join("");
     if (!list.some(p => p.id === state.pid)) state.pid = "";
     $("#fProgram", main).value = state.pid;
   };
   const fillClassSelect = () => {
-    $("#fClass", main).innerHTML = `<option value="">전체 반</option>` +
+    $("#fClass", main).innerHTML = `<option value="">전 반</option>` +
       classOptions(students, state.grade).map(c => `<option value="${c}">${c}반</option>`).join("");
     $("#fClass", main).value = state.cls;
   };
@@ -434,7 +434,7 @@ export async function renderProgram(main, { pid }, alive) {
   if (!alive()) return;
   let view = "list";
   main.innerHTML = `
-    <div class="page wide">
+    <div class="page">
       ${infoHtml}
       ${owner ? `
       <div class="btn-row">

@@ -37,7 +37,7 @@ export function notesFaceHtml(head, placeholder = "예: ○○대 ○○과 진�
   return `
     ${tabs
       ? `<div class="al-tabs"><button class="al-tab on" data-tab="after">졸업 후 <b>0</b></button><button class="al-tab" data-tab="school">재학 중 <b>0</b></button></div>`
-      : `<div class="al-notes-head">${esc(head)}</div>`}
+      : head ? `<div class="al-notes-head">${esc(head)}</div>` : ""}
     <div class="al-notes"><div class="item-meta">불러오는 중…</div></div>
     <textarea class="al-note-input" rows="2" maxlength="500" placeholder="${esc(placeholder)}"></textarea>
     <button class="btn small primary block al-note-add">메모 남기기</button>`;
@@ -138,7 +138,7 @@ export function setCornerCount(box, n) {
 export function openNotesDialog({ uid, name }, onChange) {
   return modal({
     title: name,
-    html: `<div class="notes-face memo-face">${notesFaceHtml("재학 중 메모", "예: 진로 상담 내용, 특이사항")}</div>`,
+    html: `<div class="notes-face memo-face">${notesFaceHtml("", "예: 진로 상담 내용, 특이사항")}</div>`,
     okText: null,
     dismissible: true,
     closeX: true,

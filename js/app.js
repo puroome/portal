@@ -111,7 +111,6 @@ function miniCard(hash, icon, label, desc, color) {
 
 function renderHome(main) {
   setTitle(APP_NAME, null);
-  const p = session.profile;
   const teacher = isTeacher();
   // 순서(사용자 지정): 공지(교사) · 급식 · 행사 · 성적 · 빛나다 · 동아리 · 심화탐구 · 교과 · ENGLISH · 졸업생(교사)
   const minis = [
@@ -124,14 +123,10 @@ function renderHome(main) {
     ...(teacher ? [miniCard("#/alumni", "🎓", "졸업생", "졸업 앨범 · 연락처", "#795548")] : [])
   ].join("");
 
+  // 제목 앞에 앱 아이콘 (첫 화면만)
+  $("#pageTitle").innerHTML = `<img class="title-icon" src="favicon.png" alt="">${esc(APP_NAME)}`;
   main.innerHTML = `
-    <div class="page">
-      <div class="hello">
-        <div>
-          <div class="hello-name">${esc(p.name)} ${teacher ? "선생님" : ""}</div>
-          <div class="hello-sub">${teacher ? "교사 계정" : `${esc(p.sid)} · ${esc(p.grade)}학년 ${esc(p.cls)}반 ${esc(p.no)}번`}</div>
-        </div>
-      </div>
+    <div class="page home-page">
       ${teacher ? `
       <form class="student-find" id="studentFind" role="search">
         <svg class="sf-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0"/><path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2"/></svg>
@@ -169,8 +164,8 @@ function openUserMenu() {
     title: session.profile.name,
     html: `
       <div class="menu-list">
-        <button class="list-btn" data-menu="pw">🔑 PW 변경</button>
-        <button class="list-btn danger" data-menu="logout">↩️ 로그아웃</button>
+        <button class="list-btn" data-menu="pw"><svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="10.5" width="14" height="10.5" rx="2.6"/><path d="M8.2 10.5V7.6a3.8 3.8 0 0 1 7.6 0v2.9"/><circle cx="12" cy="15.2" r="1.2" fill="currentColor" stroke="none"/><path d="M12 16v2"/></svg>PW 변경</button>
+        <button class="list-btn danger" data-menu="logout"><svg class="menu-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.6 5.3a7.3 7.3 0 1 0 0 13.4"/><path d="M10.5 12h10M17.5 9l3 3-3 3"/></svg>로그아웃</button>
       </div>`,
     okText: null,
     closeX: true,               // 닫기 버튼 줄 대신 모서리 ✕ (바깥을 눌러도 닫힘)

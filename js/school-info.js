@@ -35,13 +35,14 @@ function onSwipe(el, fn) {
 }
 
 // ======================= 🍴 급식 =======================
-let mealType = "2";   // 고른 식사(조식1·중식2·석식3)를 날짜를 옮겨도 유지
+// 식사 탭은 기억하지 않고 날짜마다 늘 중식부터 (사용자 요청)
 
 export async function renderMeal(main, params) {
   setTitle("🍴 급식");
   const today = todayYmd();
   let cur = params?.date && /^\d{8}$/.test(params.date) ? params.date : today;
   let seq = 0;
+  let mealType = "2";
 
   main.innerHTML = `
     <div class="page">
@@ -54,9 +55,9 @@ export async function renderMeal(main, params) {
     </div>`;
   const box = $("#mealBox", main);
 
-  const move = step => { cur = dateToYmd(nextWeekday(ymdToDate(cur), step)); draw(); };
+  const move = step => { cur = dateToYmd(nextWeekday(ymdToDate(cur), step)); mealType = "2"; draw(); };
   $$("[data-step]", main).forEach(b => b.onclick = () => move(Number(b.dataset.step)));
-  $("#mealToday", main).onclick = () => { cur = today; draw(); };
+  $("#mealToday", main).onclick = () => { cur = today; mealType = "2"; draw(); };
   onSwipe(main.querySelector(".page"), move);
   const onKey = e => { if (e.key === "ArrowLeft") move(-1); if (e.key === "ArrowRight") move(1); };
   document.addEventListener("keydown", onKey);
@@ -88,7 +89,7 @@ export async function renderMeal(main, params) {
           <p>${cur === today ? "오늘은" : "이 날은"} 급식이 없습니다.</p>
           <button class="btn small ghost" id="mealNext">${esc(md(nx))} 급식 보기 ›</button>
         </div>`;
-      $("#mealNext", box).onclick = () => { cur = nx; draw(); };
+      $("#mealNext", box).onclick = () => { cur = nx; mealType = "2"; draw(); };
       return;
     }
     meals.sort((a, b) => a.typeCode.localeCompare(b.typeCode));
@@ -117,7 +118,8 @@ export async function renderMeal(main, params) {
 }
 
 // ======================= 📅 행사 (학사일정) =======================
-let gradeFilter = "";   // "" = 전체
+// 학년 구분 없이 늘 전체 (특정 학년 행사는 목록에 "○학년" 배지가 붙음)
+const gradeFilter = "";
 
 export async function renderEvents(main, params) {
   setTitle("📅 행사");
@@ -129,9 +131,6 @@ export async function renderEvents(main, params) {
   main.innerHTML = `
     <div class="page">
       <div id="evBanner"></div>
-      <div class="chip-row">
-        ${["", "1", "2", "3"].map(g => `<button class="chip ${g === gradeFilter ? "on" : ""}" data-grade="${g}">${g ? g + "학년" : "전체"}</button>`).join("")}
-      </div>
       <div class="info-card cal-card">
         <div class="cal-head">
           <button class="icon-btn" data-mstep="-1" aria-label="이전 달"><svg viewBox="0 0 24 24"><path d="M15.4 7.4 14 6l-6 6 6 6 1.4-1.4-4.6-4.6z"/></svg></button>
@@ -148,11 +147,6 @@ export async function renderEvents(main, params) {
   const moveMonth = n => { ym = shiftMonth(ym, n); selected = monthOf(today) === ym ? today : `${ym}01`; draw(); };
   $$("[data-mstep]", main).forEach(b => b.onclick = () => moveMonth(Number(b.dataset.mstep)));
   onSwipe($(".cal-card", main), moveMonth);
-  $$("[data-grade]", main).forEach(b => b.onclick = () => {
-    gradeFilter = b.dataset.grade;
-    $$("[data-grade]", main).forEach(x => x.classList.toggle("on", x === b));
-    draw();
-  });
 
   // 배너는 보고 있는 달과 상관없이 지금 학년도 기준 (학년 칩을 바꾸면 다시 그림)
   let bannerRanges = null;

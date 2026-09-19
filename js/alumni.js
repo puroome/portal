@@ -43,7 +43,7 @@ export async function renderAlumni(main, params, alive) {
   list.forEach(a => { (byCls[a.cls || "?"] ||= []).push(a); });
 
   main.innerHTML = `
-    <div class="page wide">
+    <div class="page">
       <div class="chip-row">
         ${years.map(y => `<button class="chip ${y === year ? "on" : ""}" data-year="${y}">${y}년 졸업</button>`).join("")}
       </div>

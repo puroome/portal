@@ -110,7 +110,10 @@ body:has(.page-loading.hold-wide) .topbar { padding-inline: max(12px, calc((100%
 .topbar-left { grid-column: 1; display: flex; align-items: center; gap: 2px; min-width: 0; }
 .topbar-right { grid-column: 3; display: flex; justify-content: flex-end; min-width: 0; }
 .page-title { flex: 1; min-width: 0; font-weight: 800; font-size: 17px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 4px; }
-.home-btn { grid-column: 2; justify-self: center; }
+/* 홈 버튼: 상단바(56px) 위아래 여백을 거의 없애고 그만큼 크게 */
+.home-btn { grid-column: 2; justify-self: center; width: 52px; height: 52px; border-radius: 14px; }
+.home-btn svg { width: 40px; height: 40px; }
+.title-icon { width: 22px; height: 22px; vertical-align: -4px; margin-right: 7px; border-radius: 5px; }
 .user-chip { min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; display: flex; align-items: center; gap: 6px; padding: 5px 6px 5px 12px; border: 1px solid var(--line); border-radius: 20px; cursor: pointer; font-size: 13px; font-weight: 700; background: #fff; }
 .user-chip:hover { border-color: var(--primary); }
 .role-badge { background: var(--primary-soft); color: var(--primary-dark); border-radius: 12px; padding: 1px 8px; font-size: 12px; }
@@ -164,6 +167,10 @@ button.menu-card:disabled { opacity: .5; cursor: not-allowed; transform: none; }
 /* 매일 쓰는 출석은 큰 띠로 */
 .att-banner { display: flex; align-items: center; gap: 14px; background: #1e8e3e; color: #fff; border-radius: var(--radius);
   padding: 16px 18px; margin-bottom: 12px; box-shadow: var(--shadow); transition: transform .15s, box-shadow .15s; }
+/* 첫 화면: 인사 정보를 없앤 대신 메뉴 높이를 1.3배로 (출석 띠 84→109px, 작은 카드 66→86px) */
+.home-page { padding-top: 4px; }
+.home-page .att-banner { padding-top: 28px; padding-bottom: 28px; }
+.home-page .mini-card { padding-top: 22px; padding-bottom: 22px; }
 .att-banner:hover { transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,0,0,.12); }
 .ab-icon { width: 52px; height: 52px; border-radius: 14px; background: rgba(255,255,255,.22); display: grid; place-items: center;
   font-size: 30px; line-height: 1; flex-shrink: 0; }
@@ -202,6 +209,9 @@ button:focus-visible, a:focus-visible { outline: 2px solid rgba(66,133,244,.55);
 .filter-bar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .filter-bar select, .filter-bar input { width: auto; flex: 0 1 auto; padding: 8px 10px; font-size: 14px; }
 .filter-bar .grow { flex: 1 1 200px; }
+.prog-filter { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)) minmax(180px, 2fr); }
+.prog-filter select, .prog-filter input { width: 100%; min-width: 0; padding: 8px 6px; }
+@media (max-width: 640px) { .prog-filter { grid-template-columns: auto auto auto minmax(0, 1fr); gap: 6px; } .prog-filter .grow { grid-column: 1 / -1; } }
 
 .result-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin: 6px 0 10px; font-size: 14px; color: var(--sub); }
 .result-head b { color: var(--text); }
@@ -288,10 +298,11 @@ a.item-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.1); }
 .sc-name { padding: 7px 4px 8px; text-align: center; font-size: 14px; font-weight: 700; line-height: 1.3; word-break: keep-all; }
 button.student-card { border: none; padding: 0; font: inherit; cursor: pointer; text-align: inherit; }
 /* 폰에서도 화면을 다 덮지 않게 작게: 폭 250px, 사진 130px(3:4 → 약 173px 높이) */
-.modal-box.alumni-modal { max-width: 250px; padding: 16px; }   /* .modal-box 가 파일 뒤쪽에 있어 우선순위를 올림 */
+/* 폭은 공지 상세 창과 같게(380px), 높이는 내용만큼 · 최대 폭의 1.5배(570px) */
+.modal-box.alumni-modal { max-width: 380px; max-height: min(calc(min(380px, 100vw - 32px) * 1.5), 90vh); padding: 18px; }   /* .modal-box 가 파일 뒤쪽에 있어 우선순위를 올림 */
 .alumni-modal .modal-title { text-align: center; font-size: 18px; margin-bottom: 10px; }
 .alumni-contact { display: flex; flex-direction: column; align-items: center; gap: 10px; }
-.alumni-photo { width: 130px; border-radius: 10px; }
+.alumni-photo { width: min(255px, 100%); border-radius: 12px; }   /* 사진 1.5배 (170 → 255px) */
 .alumni-contact .item-meta { font-size: 13px; }
 .alumni-btns { display: flex; gap: 8px; width: 100%; }
 .alumni-btns .btn { flex: 1; padding: 9px 6px; font-size: 14px; border-radius: 10px; }
@@ -549,9 +560,11 @@ button.student-card { border: none; padding: 0; font: inherit; cursor: pointer; 
 .modal-x:hover { background: #f8d7d4; }
 .modal-x:active { background: #f4c1bc; }
 /* 사용자 메뉴: 내용 폭에 딱 맞게 (오른쪽 여백 없이). 이름 오른쪽만 ✕ 자리를 비움 */
-.modal-box.user-menu-modal { width: auto; max-width: none; padding: 18px 18px 18px; }
-.modal-box.user-menu-modal .modal-title { padding-right: 34px; margin-bottom: 10px; white-space: nowrap; }
-.modal-box.user-menu-modal .list-btn { padding: 11px 14px; white-space: nowrap; }
+/* 가로·세로 모두 예전의 1.5배 (글자·여백을 함께 키움) */
+.modal-box.user-menu-modal { width: auto; max-width: none; padding: 27px; }
+.modal-box.user-menu-modal .modal-title { font-size: 24px; padding-right: 40px; margin-bottom: 15px; white-space: nowrap; }
+.modal-box.user-menu-modal .menu-list { gap: 12px; }
+.modal-box.user-menu-modal .list-btn { padding: 16px 22px; font-size: 20px; border-radius: 13px; white-space: nowrap; }
 
 /* 졸업생 창: 왼쪽 위 ℹ️ (오른쪽 ✕ 와 좌우 대칭, 노란 바탕) + 뒤집기 */
 .modal-i { position: absolute; top: 0; left: 0; z-index: 2; width: 38px; height: 38px; border: none; border-radius: 16px 0 14px 0;
@@ -586,7 +599,7 @@ button.student-card { border: none; padding: 0; font: inherit; cursor: pointer; 
 .notes-face > .btn { flex: none; }
 
 /* 앱을 열 때 뜨는 공지 창: 졸업생 창과 같은 크기(폭 250px · 높이 320px) 고정, 공지 목록만 스크롤 */
-.modal-box.notice-pop-modal { max-width: 250px; height: 320px; padding: 16px; display: flex; flex-direction: column; overflow: hidden; }
+.modal-box.notice-pop-modal { max-width: 380px; max-height: min(calc(min(380px, 100vw - 32px) * 1.5), 90vh); padding: 18px; display: flex; flex-direction: column; overflow: hidden; }
 .notice-pop-modal .modal-title { text-align: center; font-size: 18px; margin-bottom: 10px; padding: 0 30px; }
 .notice-pop-modal .modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .nt-pop-list { flex: 1; min-height: 0; overflow-y: auto; }
@@ -599,8 +612,9 @@ button.student-card { border: none; padding: 0; font: inherit; cursor: pointer; 
 /* 학생 정보 화면 [ℹ️ 메모] 버튼과 창 (졸업생 카드 뒷면과 같은 모양 · 크기 250×320) */
 .btn.contact-memo { background: #fff4c2; color: #8a5a00; }
 .memo-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #e53935; color: #fff; font-size: 11px; line-height: 18px; }
-.modal-box.memo-modal { height: 320px; display: flex; flex-direction: column; }
-.memo-modal .modal-body { flex: 1; min-height: 0; display: flex; }
+.modal-box.memo-modal { display: flex; flex-direction: column; }
+.memo-modal .al-notes { flex: 0 1 auto; min-height: 60px; }
+.memo-modal .modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }   /* 세로 배치여야 메모 면이 창 폭을 꽉 채움 */
 .memo-face { flex: 1; min-height: 0; }
 span.modal-i { cursor: default; }
 span.modal-i:hover { background: #ffe58a; }
@@ -611,3 +625,12 @@ span.modal-i:hover { background: #ffe58a; }
 .al-tab b { font-weight: 800; }
 .al-tab.on { background: #ffe58a; color: #8a5a00; }
 .al-note.old { background: #f8f9fa; border-color: var(--line); }
+
+/* 내용이 적으면 창 높이도 줄도록: 목록은 내용만큼, 넘치면(최대 높이) 목록만 스크롤 */
+.notice-pop-modal .modal-body, .memo-modal .modal-body { flex: 0 1 auto; }
+.nt-pop-list, .memo-face { flex: 0 1 auto; }
+
+/* 사용자 메뉴의 선 아이콘 (자물쇠 · 나가기) — 글자색을 따라감(로그아웃은 빨강) */
+.list-btn:has(.menu-ico) { display: flex; align-items: center; gap: 10px; }
+.menu-ico { width: 1.15em; height: 1.15em; flex: none; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.home-btn svg { fill: #3c4043; }

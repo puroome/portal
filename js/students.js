@@ -17,7 +17,7 @@ export async function renderSearch(main, params, alive) {
 
   main.innerHTML = `
     <div class="page">
-      <p class="page-desc">학번 · 이름 · x-y 형식으로 검색하세요.</p>
+      <p class="page-desc">학번 · 이름 · 학년-반 형식으로 검색하세요.</p>
       <input id="sSearch" type="search" class="search-input" placeholder="예: 3129, 홍길동, 3-1" autocomplete="off" value="${esc(q0)}">
       <div class="filter-bar">
         <select id="sGrade"><option value="">학년 선택</option>${gradeOptions(students).map(g => `<option>${g}</option>`).join("")}</select>
@@ -65,7 +65,7 @@ export async function renderProfile(main, { sid }, alive) {
   let catFilter = "";
 
   main.innerHTML = `
-    <div class="page wide">
+    <div class="page">
       <div class="info-card profile-head">
         <div>
           <div class="hello-name">${esc(st.name)}</div>

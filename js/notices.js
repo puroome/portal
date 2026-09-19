@@ -58,7 +58,7 @@ function showDetail(n) {
       <div class="item-meta nt-detail-meta">${stateBadge(n)} ${esc(periodText(n))} · 담당 ${esc(n.createdBy || "")}</div>
       <div class="nt-content">${n.content ? richText(n.content) : `<span class="item-meta">내용이 없습니다.</span>`}</div>`,
     okText: null,
-    cancelText: "닫기",
+    closeX: true,                 // 닫기 줄 대신 모서리 ✕ (바깥을 눌러도 닫힘)
     className: "notice-modal"
   });
 }
@@ -100,7 +100,7 @@ export async function renderNotices(main, { mode } = {}, alive) {
       <div class="page">
         <div class="cat-head">
           <h3>공지</h3>
-          <a class="btn small ghost" href="#/notice/manage">⚙️ 공지 관리</a>
+          <a class="btn small ghost" href="#/notice/manage">⚙️ 관리</a>
         </div>
         <p class="page-desc">공지 기간 중인 공지는 학생·교사가 앱을 열 때 창으로 뜹니다.</p>
         ${section("진행 중", active, "지금 띄우는 공지가 없습니다.")}
@@ -161,8 +161,8 @@ function noticeDialog(n = {}) {
 
 // ---------------- 앱을 열 때 뜨는 공지 창 ----------------
 // 공지 기간이 겹치는 공지를 모두 한 창에, 남은 기간이 짧은 것부터. 창 바깥을 누르면 닫힙니다.
-// 교사만 [오늘은 다시 뜨지 않기] — 이 기기에 오늘 날짜와 그때 본 공지를 적어 둡니다.
-// 그날 새 공지가 올라오면 다시 뜹니다(본 공지만 숨김). 학생은 항상 뜹니다.
+// [오늘은 다시 뜨지 않기] (학생·교사 모두) — 이 기기에 오늘 날짜와 그때 본 공지를 적어 둡니다.
+// 그날 새 공지가 올라오면 다시 뜹니다(본 공지만 숨김).
 let popupShown = false;
 const hideKey = () => `noticeHide:${session.profile?.uid}`;
 function hiddenToday(today) {
@@ -176,10 +176,9 @@ export async function showActiveNotices() {
   if (popupShown) return;
   popupShown = true;
   const today = dateKey();
-  const teacher = isTeacher();
   const list = (await loadNotices()).filter(n => noticeState(n, today) === "active").sort(byEndSoonest);
   if (!list.length) return;
-  if (teacher) {
+  {
     const hidden = hiddenToday(today);
     if (list.every(n => hidden.has(n.id))) return;
   }
@@ -192,7 +191,7 @@ export async function showActiveNotices() {
         <div class="item-meta">${esc(md(n.endDate))}까지 · 담당 ${esc(n.createdBy || "")}</div>
         ${n.content ? `<button class="nt-more" data-more>자세히보기 ▾</button><div class="nt-content" hidden>${richText(n.content)}</div>` : ""}
       </div>`).join("") + `</div>` +
-      (teacher ? `<label class="check-line nt-hide"><input type="checkbox" id="ntHideToday"> 오늘은 다시 뜨지 않기</label>` : ""),
+      `<label class="check-line nt-hide"><input type="checkbox" id="ntHideToday"> 오늘은 다시 뜨지 않기</label>`,
     okText: null,
     closeX: true,                 // 졸업생 창과 같은 모서리 ✕ (바깥을 눌러도 닫힘)
     className: "notice-pop-modal",
@@ -207,7 +206,7 @@ export async function showActiveNotices() {
     }
   });
   // 닫기 버튼이든 바깥 클릭이든, 체크해 두었으면 기억
-  if (teacher && hideToday) {
+  if (hideToday) {
     try { localStorage.setItem(hideKey(), JSON.stringify({ date: today, ids: list.map(n => n.id) })); } catch { /* 저장 불가(사생활 보호 모드 등) */ }
   }
 }

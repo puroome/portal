@@ -47,7 +47,7 @@ async function renderTeacherSearch(main, alive) {
   if (!alive()) return;
   main.innerHTML = `
     <div class="page">
-      <p class="page-desc">학번 · 이름 · x-y 형식으로 검색하세요.</p>
+      <p class="page-desc">학번 · 이름 · 학년-반 형식으로 검색하세요.</p>
       <input id="gSearch" type="search" class="search-input" placeholder="예: 3129, 홍길동, 3-1" autocomplete="off">
       <div id="gResults" class="student-results"></div>
     </div>`;

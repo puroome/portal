@@ -66,7 +66,7 @@ export async function renderAttendance(main, { mode = "today" } = {}, alive) {
 }
 
 // ---------------- 교사: 목록 ----------------
-// 프로그램 화면과 같은 구조: 기본은 [출석체크], 오른쪽 위 버튼으로 [📊 통계]·[⚙️ 반 관리] 화면에 들어갑니다.
+// 프로그램 화면과 같은 구조: 기본은 [출석체크], 오른쪽 위 버튼으로 [📊 통계]·[⚙️ 관리](반 관리) 화면에 들어갑니다.
 // 방과후·야간자율은 폴더 탭으로 고릅니다.
 const MODES = {
   today:  { head: "출석체크", desc: "" },
@@ -86,7 +86,7 @@ async function renderTeacherList(main, mode, alive) {
   let includeEnded = false;
 
   const headButtons = {
-    today:  `<a class="btn small ghost" href="#/att/stats">📊 통계</a><a class="btn small ghost" href="#/att/manage">⚙️ 반 관리</a>`,
+    today:  `<a class="btn small ghost" href="#/att/stats">📊 통계</a><a class="btn small ghost" href="#/att/manage">⚙️ 관리</a>`,
     manage: `<button class="btn small primary" id="btnNewGroup">+ 새 반</button>`,
     stats:  ""
   }[mode];
@@ -531,7 +531,7 @@ export async function renderGroup(main, { gid }, alive) {
             <button class="st-btn memo" data-memo="${esc(m.sid)}" title="메모" ${blocked ? "disabled" : ""}>✎</button>
           </div>
         </div>`;
-    }).join("") : emptyState("명단이 비어 있습니다. [⚙️ 반 관리]에서 학생을 추가하세요.");
+    }).join("") : emptyState("명단이 비어 있습니다. [⚙️ 관리]에서 학생을 추가하세요.");
 
     $$("[data-st]", main).forEach(b => b.onclick = () => setStatus(b.dataset.sid, b.dataset.st));
     $$("[data-memo]", main).forEach(b => b.onclick = () => editMemo(b.dataset.memo));
@@ -670,7 +670,7 @@ export async function renderGroupStats(main, { gid }, alive) {
   const range = { from: dateKey(), to: dateKey() };   // 기본은 오늘 하루
 
   main.innerHTML = `
-    <div class="page wide">
+    <div class="page">
       <div class="info-card">
         <div class="item-top"><span class="badge type-${group.type}">${esc(ATT_TYPES[group.type]?.label || "")}</span><span class="item-meta">${esc(cardSchedule(group))}</span></div>
         <h2 class="info-title">${esc(group.name)}</h2>
