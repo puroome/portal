@@ -19,10 +19,10 @@ const MAX_FILE_MB  = 10;
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 const SHEET_NAME = "계정";
-const HEADERS = ["구분(학생/교사)", "ID(학번/교사ID)", "이름", "학년", "반", "번호", "초기 비밀번호", "상태", "UID(자동)"];
-const HEADER_KEYS = ["TYPE", "ID", "NAME", "GRADE", "CLASS", "NO", "PW", "STATUS", "UID"];
+const HEADERS = ["구분(학생/교사)", "ID(학번/교사ID)", "이름", "학년", "반", "번호", "초기 비밀번호", "상태", "UID(자동)", "전화번호"];
+const HEADER_KEYS = ["TYPE", "ID", "NAME", "GRADE", "CLASS", "NO", "PW", "STATUS", "UID", "PHONE"];
 // 열 위치는 1행의 헤더 이름으로 찾습니다. 그래서 "2025년" 같은 연도 열을 어디에 끼워 넣어도 됩니다.
-// 헤더를 못 찾으면 기본 위치(A~I)를 씁니다. 목록에 없는 열(예: 예전 "학교 Google 계정")은 무시합니다.
+// 헤더를 못 찾으면 기본 위치(A~J)를 씁니다. 목록에 없는 열(예: 예전 "학교 Google 계정")은 무시합니다.
 let COL = defaultCols_();
 
 function defaultCols_() {
@@ -139,6 +139,7 @@ function prepareSheet_(sh) {
   sh.setFrozenRows(1);
   sh.getRange(2, cols.ID, rows, 1).setNumberFormat("@");
   sh.getRange(2, cols.PW, rows, 1).setNumberFormat("@");
+  sh.getRange(2, cols.PHONE, rows, 1).setNumberFormat("@");   // 010… 의 앞자리 0 이 사라지지 않게
   const rule = SpreadsheetApp.newDataValidation().requireValueInList(["학생", "교사"], true).build();
   sh.getRange(2, cols.TYPE, rows, 1).setDataValidation(rule);
   sh.setColumnWidth(cols.UID, 90);
@@ -222,6 +223,7 @@ function readRows_(onlySelected, includeNoId) {
     cls: cell(v, "CLASS"),
     no: cell(v, "NO"),
     pw: v[cols.PW - 1],
+    phone: phoneOf_(cell(v, "PHONE")),
     uid: cell(v, "UID"),
     // 지난 학년도 학번: { 2025: "10101", ... }
     years: Object.fromEntries(cols.YEARS.map(y => [y.year, String(v[y.col - 1] || "").trim()]).filter(([, sid]) => sid))
@@ -241,6 +243,12 @@ function sidsOf_(r, currentYear) {
   return Object.keys(sids).length ? sids : null;
 }
 
+// 전화번호: 숫자만 남깁니다. 시트가 숫자로 바꿔 앞의 0 이 빠진 경우(1012345678)는 되살립니다.
+function phoneOf_(v) {
+  const d = String(v || "").replace(/[^0-9]/g, "");
+  return /^1\d{8,9}$/.test(d) ? "0" + d : d;
+}
+
 // [초기 비밀번호] 칸이 비어 있으면 공통 기본값(DEFAULT_PW)을 씁니다.
 function pwOf_(r) {
   return String(r.pw == null ? "" : r.pw).trim() || DEFAULT_PW;
@@ -248,7 +256,8 @@ function pwOf_(r) {
 
 function profileOf_(r) {
   // googleEmail: null — 예전 ENGLISH 자동 로그인용으로 저장했던 학교 이메일을 동기화 때 지웁니다(이제 쓰지 않음)
-  const p = { role: r.role, loginId: r.loginId, name: r.name, active: true, googleEmail: null };
+  // phone: 교사 화면의 📞전화·📩문자 버튼용. 칸을 비우면 DB 에서도 지웁니다(users 는 교사·본인만 읽음).
+  const p = { role: r.role, loginId: r.loginId, name: r.name, active: true, googleEmail: null, phone: r.phone || null };
   if (r.role === "student") Object.assign(p, { sid: r.loginId, grade: r.grade, cls: r.cls, no: r.no, sids: sidsOf_(r, currentSchoolYear_()) });
   return p;
 }
@@ -261,10 +270,34 @@ function syncAccounts() {
   const sh = getSheet_();
   // 시트 틀을 먼저 갖춥니다 (빠진 열 제목 채우기·텍스트 서식·드롭다운, 연도 열은 그대로)
   prepareSheet_(sh);
-  const rows = readRows_(false);
+  const ui = SpreadsheetApp.getUi();
+  const all = readRows_(false, true);          // ID 가 빈 행도(UID 만 있어도) "시트에 있음"으로 봅니다
+  const rows = all.filter(r => r.loginId);
+  if (!all.length) { ui.alert("계정 시트가 비어 있어 동기화를 멈췄습니다.\n(시트에 없는 사람은 모두 잠기므로 빈 시트로는 실행하지 않습니다)"); return; }
   const started = Date.now();
-  let created = 0, updated = 0, failed = 0;
+  let created = 0, updated = 0, failed = 0, blocked = 0, restored = 0, notBlocked = 0;
   const patch = {};
+
+  // 0) 시트에서 행이 사라졌는데 아직 로그인할 수 있는 사람 → 확인받고 잠금 (🚷 선택행 제외 처리와 같음)
+  //    계정은 지우지 않으므로 지난 기록의 이름은 그대로. 행을 (UID 까지) 다시 붙이고 동기화하면 되살아납니다(아래 되살리기).
+  const users = dbGet_("users") || {};
+  const inSheet = {};
+  all.forEach(r => { if (r.uid) inSheet[r.uid] = true; });
+  const gone = Object.keys(users).filter(uid => {
+    const u = users[uid] || {};
+    return (u.role === "student" || u.role === "teacher") && u.active !== false && !inSheet[uid];
+  }).sort((a, b) => sidCompare_(String(users[a].loginId || ""), String(users[b].loginId || "")));
+  if (gone.length) {
+    const names = gone.slice(0, 20).map(uid => "  · " + (users[uid].role === "teacher" ? "교사 " : "") + (users[uid].loginId || "") + " " + (users[uid].name || "")).join("\n");
+    const ans = ui.alert("🔥Firebase 동기화 — 시트에 없는 사람 " + gone.length + "명",
+      names + (gone.length > 20 ? "\n  · … 외 " + (gone.length - 20) + "명" : "") + "\n\n" +
+      "계정 시트에서 행이 지워졌는데 아직 앱에 로그인할 수 있습니다.\n\n" +
+      "[예] 로그인을 막고 \"" + MOVEOUT_SHEET + "\" 시트에 기록합니다 (🚷 선택행 제외 처리와 같음).\n" +
+      "        지난 기록의 이름은 그대로 남습니다.\n" +
+      "[아니요] 이번에는 막지 않습니다. 실수로 지운 행이면 [아니요] 를 누르고 행을 되살리세요.", ui.ButtonSet.YES_NO);
+    if (ans === ui.Button.YES) { blockMissing_(gone, users); blocked = gone.length; }
+    else notBlocked = gone.length;
+  }
 
   // 1) 이미 UID 가 있는 행 → 이름·학년·반 정보 갱신 (비밀번호는 그대로)
   //    시트에서 ID 를 바꿨다면 로그인 ID(인증 이메일)도 함께 변경
@@ -307,6 +340,19 @@ function syncAccounts() {
   const restore = changes.filter(r => failedIds[r.uid]);
   if (restore.length) runUpdates(restore, r => authEmail[r.uid]);
 
+  // 되살리기: 잠겨 있던 계정의 행이 시트에 다시 있으면(실수로 지웠다가 UID 까지 되살린 경우) 잠금을 풉니다
+  const revived = {};
+  const revive = ready.filter(r => users[r.uid] && users[r.uid].active === false && !failedIds[r.uid]);
+  for (let i = 0; i < revive.length; i += 50) {
+    UrlFetchApp.fetchAll(revive.slice(i, i + 50).map(r => toolkitRequest_("accounts:update", { localId: r.uid, disableUser: false })));
+  }
+  revive.forEach(r => {
+    revived[r.uid] = true;
+    patch[r.uid + "/active"] = true;
+    patch[r.uid + "/leftAt"] = null;
+    patch[r.uid + "/graduated"] = null;
+  });
+
   ready.forEach(r => {
     let status = "✅ 정보 반영";
     if (authEmail[r.uid] !== loginEmail_(r.loginId)) {
@@ -318,6 +364,7 @@ function syncAccounts() {
       }
       status = "✅ ID 변경 (" + authEmail[r.uid].split("@")[0] + " → " + r.loginId + ")";
     }
+    if (revived[r.uid]) { status = "✅ 다시 사용 (잠금 해제)"; restored++; }
     const p = profileOf_(r);
     Object.keys(p).forEach(k => { if (k !== "active") patch[r.uid + "/" + k] = p[k]; });
     if (r.role === "teacher") ["sid", "grade", "cls", "no", "sids"].forEach(k => { patch[r.uid + "/" + k] = null; });
@@ -364,7 +411,9 @@ function syncAccounts() {
   }
 
   if (Object.keys(patch).length) dbPatch_("users", patch);
-  SpreadsheetApp.getUi().alert("완료\n\n새 계정: " + created + "\n정보 반영: " + updated + "\n실패: " + failed);
+  ui.alert("완료\n\n새 계정: " + created + "\n정보 반영: " + updated + (restored ? " (다시 사용 " + restored + ")" : "") +
+    "\n잠금(시트에서 삭제됨): " + blocked + "\n실패: " + failed +
+    (notBlocked ? "\n\n⚠ 시트에 없는데 아직 로그인할 수 있는 사람 " + notBlocked + "명을 막지 않았습니다." : ""));
 }
 
 // =======================================================
@@ -493,6 +542,7 @@ function doPost(e) {
     if (req.action === "upload") return json_(uploadFile_(user, req));
     if (req.action === "download") return json_(downloadFile_(user, req));
     if (req.action === "remove") return json_(removeFile_(user, req));
+    if (req.action === "neis") return json_(neis_(req));   // 급식·학사일정 (로그인한 사람만 — 인증키 호출량 보호)
     return json_({ error: "알 수 없는 요청입니다." });
   } catch (err) {
     return json_({ error: err.message || String(err) });
@@ -611,15 +661,19 @@ function removeFile_(user, req) {
 function portalOwnerStats_() {
   const groups = dbGet_("portal/att/groups") || {};
   const programs = dbGet_("portal/programs") || {};
+  const notices = dbGet_("portal/notices") || {};
+  const alumniNotes = dbGet_("portal/alumniNotes") || {};
   const stats = {};
   const bump = (uid, name, field) => {
     const key = uid || "(등록 교사 정보 없음)";
-    stats[key] = stats[key] || { name: name || "", groups: 0, programs: 0 };
+    stats[key] = stats[key] || { name: name || "", groups: 0, programs: 0, notices: 0, alumniNotes: 0 };
     if (name && !stats[key].name) stats[key].name = name;
     stats[key][field]++;
   };
   Object.values(groups).forEach(g => bump(g.createdByUid, g.createdBy, "groups"));
   Object.values(programs).forEach(p => bump(p.createdByUid, p.createdBy, "programs"));
+  Object.values(notices).forEach(n => bump(n.createdByUid, n.createdBy, "notices"));
+  Object.values(alumniNotes).forEach(byNote => Object.values(byNote || {}).forEach(n => bump(n.createdByUid, n.createdBy, "alumniNotes")));
   return stats;
 }
 
@@ -627,7 +681,7 @@ function listPortalOwners() {
   if (!requireAdmin_()) return;
   const stats = portalOwnerStats_();
   const lines = Object.keys(stats).map(uid =>
-    `• ${stats[uid].name || "(이름 없음)"}  |  UID: ${uid}\n   출석 반 ${stats[uid].groups}개 · 프로그램 ${stats[uid].programs}개`);
+    `• ${stats[uid].name || "(이름 없음)"}  |  UID: ${uid}\n   출석 반 ${stats[uid].groups}개 · 프로그램 ${stats[uid].programs}개 · 공지 ${stats[uid].notices}개 · 졸업생 메모 ${stats[uid].alumniNotes}개`);
   SpreadsheetApp.getUi().alert("✅교사별 자료보기",
     (lines.length ? lines.join("\n\n") : "자료가 없습니다.") +
     "\n\n지우려면 [⚙️관리자 도구 → ❌자료 삭제] 를 실행하고 위 UID 나 이름을 입력하세요.",
@@ -647,10 +701,17 @@ function deletePortalDataByOwner() {
   const groups = dbGet_("portal/att/groups") || {};
   const programs = dbGet_("portal/programs") || {};
   const submissions = dbGet_("portal/submissions") || {};
+  const notices = dbGet_("portal/notices") || {};
+  const alumniNotes = dbGet_("portal/alumniNotes") || {};
   const match = obj => obj && (obj.createdByUid === key || obj.createdBy === key);
 
   const gids = Object.keys(groups).filter(id => match(groups[id]));
   const pids = Object.keys(programs).filter(id => match(programs[id]));
+  const nids = Object.keys(notices).filter(id => match(notices[id]));
+  const memoPaths = [];
+  Object.keys(alumniNotes).forEach(auid => Object.keys(alumniNotes[auid] || {}).forEach(id => {
+    if (match(alumniNotes[auid][id])) memoPaths.push("portal/alumniNotes/" + auid + "/" + id);
+  }));
 
   let subCount = 0, fileCount = 0;
   const fileIds = [];
@@ -663,14 +724,16 @@ function deletePortalDataByOwner() {
     });
   });
 
-  if (!gids.length && !pids.length) { ui.alert("해당하는 자료가 없습니다: " + key); return; }
+  if (!gids.length && !pids.length && !nids.length && !memoPaths.length) { ui.alert("해당하는 자료가 없습니다: " + key); return; }
 
   const summary =
     `[${key}] 이(가) 만든 자료를 지웁니다.\n\n` +
     `• 출석 반 ${gids.length}개: ${gids.map(id => groups[id].name).join(", ") || "-"}\n` +
     `   (그 반의 출결 기록·운영일·체크인 코드도 함께 삭제)\n` +
     `• 프로그램 ${pids.length}개: ${pids.map(id => programs[id].title).join(", ") || "-"}\n` +
-    `   (학생 제출자료 ${subCount}건, 첨부 파일 ${fileCount}개도 함께 삭제)\n\n` +
+    `   (학생 제출자료 ${subCount}건, 첨부 파일 ${fileCount}개도 함께 삭제)\n` +
+    `• 공지 ${nids.length}개: ${nids.map(id => notices[id].title).join(", ") || "-"}\n` +
+    `• 졸업생 메모 ${memoPaths.length}개\n\n` +
     `되돌릴 수 없습니다. 계속할까요?`;
   if (ui.alert("⚠️ 삭제 확인", summary, ui.ButtonSet.YES_NO) !== ui.Button.YES) return;
 
@@ -684,13 +747,15 @@ function deletePortalDataByOwner() {
     dbDelete_("portal/submissions/" + id);
     dbDelete_("portal/programs/" + id);
   });
+  nids.forEach(id => dbDelete_("portal/notices/" + id));
+  memoPaths.forEach(p => dbDelete_(p));
   let trashed = 0;
   fileIds.forEach(fid => {
     try { DriveApp.getFileById(fid).setTrashed(true); trashed++; } catch (e) { /* 이미 지워진 파일 */ }
   });
 
   ui.alert("삭제 완료",
-    `출석 반 ${gids.length}개, 프로그램 ${pids.length}개(제출자료 ${subCount}건)를 지웠습니다.\n첨부 파일 ${trashed}개를 휴지통으로 옮겼습니다.`,
+    `출석 반 ${gids.length}개, 프로그램 ${pids.length}개(제출자료 ${subCount}건), 공지 ${nids.length}개, 졸업생 메모 ${memoPaths.length}개를 지웠습니다.\n첨부 파일 ${trashed}개를 휴지통으로 옮겼습니다.`,
     ui.ButtonSet.OK);
 }
 
@@ -840,22 +905,10 @@ function exportRows_(sh, rows, opt) {
   }
 
   // 2) 로그인 막기 + 로그인 ID 비우기(전용 ID 로 옮김)
-  const patch = {};
-  for (let i = 0; i < rows.length; i += 50) {
-    const chunk = rows.slice(i, i + 50);
-    UrlFetchApp.fetchAll(chunk.map(r => toolkitRequest_("accounts:update",
-      { localId: r.uid, email: opt.emailPrefix + r.uid.toLowerCase() + "@" + EMAIL_DOMAIN, disableUser: true })));
-  }
-  rows.forEach(r => {
-    patch[r.uid + "/active"] = false;
-    patch[r.uid + "/loginId"] = null;
-    if (r.role === "student") {
-      patch[r.uid + "/sid"] = null;
-      patch[r.uid + "/sids"] = sidsOf_(Object.assign({}, r, { loginId: "" }), sidYear);
-    }
-    Object.keys(opt.extra || {}).forEach(k => { patch[r.uid + "/" + k] = opt.extra[k]; });
-  });
-  dbPatch_("users", patch);
+  blockAccounts_(rows.map(r => ({
+    uid: r.uid,
+    patch: Object.assign(r.role === "student" ? { sid: null, sids: sidsOf_(Object.assign({}, r, { loginId: "" }), sidYear) } : {}, opt.extra || {})
+  })), opt.emailPrefix);
 
   // 3) ID 열 비우고 상태 표시
   const cols = loadCols_(sh);
@@ -879,4 +932,135 @@ function exportRows_(sh, rows, opt) {
   const start = Math.max(target.getLastRow(), 1) + 1;
   target.getRange(start, 1, out.length, tgtHeader.length).setNumberFormat("@").setValues(out);
   sorted.slice().reverse().forEach(r => sh.deleteRow(r.row));
+}
+
+// 로그인 막기: 인증 계정 사용 중지 + 로그인 ID 를 전용 ID(out-…/grad-…)로 옮겨 그 학번·ID 를 비움 + DB 에 잠김 표시.
+// 계정·프로필(이름)은 지우지 않으므로 지난 기록은 이름과 함께 계속 보입니다.
+//  list: [{ uid, patch: { 함께 바꿀 users/{uid} 값 } }]
+function blockAccounts_(list, emailPrefix) {
+  for (let i = 0; i < list.length; i += 50) {
+    const chunk = list.slice(i, i + 50);
+    UrlFetchApp.fetchAll(chunk.map(x => toolkitRequest_("accounts:update",
+      { localId: x.uid, email: emailPrefix + x.uid.toLowerCase() + "@" + EMAIL_DOMAIN, disableUser: true })));
+  }
+  const patch = {};
+  list.forEach(x => {
+    patch[x.uid + "/active"] = false;
+    patch[x.uid + "/loginId"] = null;
+    Object.keys(x.patch || {}).forEach(k => { patch[x.uid + "/" + k] = x.patch[k]; });
+  });
+  if (list.length) dbPatch_("users", patch);
+}
+
+// 🔥Firebase 동기화 에서: 계정 시트에서 행이 사라진 사람을 🚷 제외 처리와 똑같이 잠그고 [전출] 시트에 기록합니다.
+// (전출 시트에 UID 까지 남기므로, 실수였다면 그 행을 계정 시트로 복사해 오고 동기화하면 되살아납니다)
+function blockMissing_(uids, users) {
+  const sidYear = currentSchoolYear_();
+  blockAccounts_(uids.map(uid => {
+    const u = users[uid] || {};
+    const p = { leftAt: sidYear };
+    if (u.role === "student") {
+      p.sid = null;
+      if (!u.sids && u.sid) { p.sids = {}; p.sids[u.sid] = sidYear; }   // 연도별 학번이 없던 예전 계정
+    }
+    return { uid: uid, patch: p };
+  }), "out-");
+
+  // [전출] 시트에 한 줄씩 (계정 시트 행은 이미 지워졌으므로 DB 의 정보로 채웁니다)
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const target = ss.getSheetByName(MOVEOUT_SHEET) || ss.insertSheet(MOVEOUT_SHEET);
+  const status = "🚷 제외 " + Utilities.formatDate(new Date(), "Asia/Seoul", "yyyy-MM-dd") + " (시트에서 삭제됨)";
+  const recs = uids.map(uid => {
+    const u = users[uid] || {};
+    const rec = {
+      "구분(학생/교사)": u.role === "teacher" ? "교사" : "학생", "ID(학번/교사ID)": "", "이름": u.name || "",
+      "학년": u.grade || "", "반": u.cls || "", "번호": u.no || "", "상태": status, "UID(자동)": uid, "전화번호": u.phone || ""
+    };
+    // 학생은 학번을 연도 열에 (🚷 제외 처리와 같은 모양). 교사 ID 는 되살릴 때 참고하도록 상태 칸에 적어 둡니다.
+    if (u.role === "teacher" && u.loginId) rec["상태"] += " · ID " + u.loginId;
+    const sids = u.sids || (u.sid ? { [u.sid]: sidYear } : {});
+    Object.keys(sids).forEach(sid => { rec[sids[sid] + "년"] = sid; });
+    return rec;
+  });
+  const header = target.getLastColumn() ? target.getRange(1, 1, 1, target.getLastColumn()).getDisplayValues()[0].map(h => String(h).trim()) : [];
+  HEADERS.forEach(h => { if (header.indexOf(h) < 0) header.push(h); });
+  recs.forEach(rec => Object.keys(rec).forEach(h => { if (header.indexOf(h) < 0) header.push(h); }));
+  target.getRange(1, 1, 1, header.length).setValues([header]).setFontWeight("bold").setBackground("#e8f0fe");
+  target.setFrozenRows(1);
+  const out = recs.map(rec => header.map(h => rec[h] == null ? "" : String(rec[h])));
+  const start = Math.max(target.getLastRow(), 1) + 1;
+  target.getRange(start, 1, out.length, header.length).setNumberFormat("@").setValues(out);
+}
+
+// =======================================================
+// 🍴급식 · 📅행사 — 나이스(NEIS) 교육정보 개방 포털 중계
+//  인증키는 코드에 적지 않고 스크립트 속성 NEIS_API_KEY 에만 둡니다(앱 코드·GitHub 에 노출되지 않음).
+//  학교는 아래 코드 두 개로만 식별합니다. (광남고등학교는 서울 광진구·경기 광주시에도 있어 이름으로 찾으면 안 됨)
+//  ⚠ 어느 날 모든 조회가 "데이터 없음" 만 돌려주면 교육청 코드(Q10) 변경을 가장 먼저 의심하세요.
+//     (2026-07 전남광주통합특별시교육청 출범 뒤에도 Q10 이 유지되는 것을 확인함)
+// =======================================================
+const NEIS_SCHOOL = { name: "광남고등학교", officeCode: "Q10", schoolCode: "7140225" };
+const NEIS_CACHE_SEC = 6 * 60 * 60;   // 같은 요청은 6시간 동안 NEIS 를 다시 부르지 않음
+
+function neis_(req) {
+  const kind = req.kind;
+  const from = String(req.from || ""), to = String(req.to || "");
+  if (kind !== "meal" && kind !== "schedule") throw new Error("알 수 없는 NEIS 요청입니다.");
+  if (!/^\d{8}$/.test(from) || !/^\d{8}$/.test(to)) throw new Error("날짜 형식이 올바르지 않습니다.");
+
+  const cache = CacheService.getScriptCache();
+  const cacheKey = "neis_" + kind + "_" + from + "_" + to;
+  const hit = cache.get(cacheKey);
+  if (hit) return { rows: JSON.parse(hit) };
+
+  const rows = kind === "meal"
+    ? neisCall_("mealServiceDietInfo", { MLSV_FROM_YMD: from, MLSV_TO_YMD: to }).map(r => ({
+        date: r.MLSV_YMD, code: String(r.MMEAL_SC_CODE || ""), type: r.MMEAL_SC_NM || "",
+        dish: r.DDISH_NM || "", kcal: r.CAL_INFO || "", ntr: r.NTR_INFO || "", org: r.ORPLC_INFO || ""
+      }))
+    : neisCall_("SchoolSchedule", { AA_FROM_YMD: from, AA_TO_YMD: to }).map(r => ({
+        date: r.AA_YMD, title: r.EVENT_NM || "", content: r.EVENT_CNTNT || "", holiday: r.SBTR_DD_SC_NM || "",
+        // 학년별 해당 여부. 실제 응답의 필드 이름은 ONE_ · TW_ · THREE_ 입니다(명세서의 TWO_ 가 아님).
+        grades: [["ONE"], ["TW", "TWO"], ["THREE"]].map((ks, i) => ks.some(k => r[k + "_GRADE_EVENT_YN"] === "Y") ? i + 1 : 0).filter(Boolean)
+      }));
+
+  // 캐시 한 칸은 100KB 까지. 한글은 3바이트라 한 달 급식이 넘칠 수 있는데, 넘치면 캐시만 건너뜁니다(앱은 브라우저에도 캐시함).
+  try { cache.put(cacheKey, JSON.stringify(rows), NEIS_CACHE_SEC); } catch (e) { /* 너무 큼 */ }
+  return { rows: rows };
+}
+
+function neisCall_(endpoint, params) {
+  const key = PropertiesService.getScriptProperties().getProperty("NEIS_API_KEY");
+  if (!key) throw new Error("NEIS 인증키가 설정되지 않았습니다. (스크립트 속성 NEIS_API_KEY)");
+  const q = Object.assign({
+    KEY: key, Type: "json", pIndex: 1, pSize: 1000,
+    ATPT_OFCDC_SC_CODE: NEIS_SCHOOL.officeCode, SD_SCHUL_CODE: NEIS_SCHOOL.schoolCode
+  }, params);
+  const url = "https://open.neis.go.kr/hub/" + endpoint + "?" +
+    Object.keys(q).map(k => k + "=" + encodeURIComponent(q[k])).join("&");
+
+  for (let attempt = 0; ; attempt++) {
+    const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+    let json = null;
+    try { json = JSON.parse(res.getContentText()); } catch (e) { /* 아래에서 처리 */ }
+    if (res.getResponseCode() === 200 && json) {
+      // 데이터 없음(주말·방학) 은 오류가 아니라 빈 결과
+      if (json.RESULT) {
+        const code = json.RESULT.CODE;
+        if (code === "INFO-200") return [];
+        const retry = /^ERROR-(500|600|601)$/.test(code);
+        if (!retry || attempt >= 1) {
+          console.warn("NEIS " + code + ": " + json.RESULT.MESSAGE);
+          throw new Error("급식·학사일정을 불러오지 못했습니다(일시적 오류).");
+        }
+      } else {
+        const body = json[endpoint];
+        return (body && body[1] && body[1].row) || [];
+      }
+    } else if (attempt >= 1) {
+      console.warn("NEIS HTTP " + res.getResponseCode());
+      throw new Error("급식·학사일정을 불러오지 못했습니다(일시적 오류).");
+    }
+    Utilities.sleep(700);   // 서버 오류는 한 번만 다시 시도
+  }
 }

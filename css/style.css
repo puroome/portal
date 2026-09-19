@@ -286,8 +286,21 @@ a.item-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.1); }
 .sc-photo img.on { opacity: 1; }
 .sc-none { font-size: 38px; opacity: .35; }
 .sc-name { padding: 7px 4px 8px; text-align: center; font-size: 14px; font-weight: 700; line-height: 1.3; word-break: keep-all; }
+button.student-card { border: none; padding: 0; font: inherit; cursor: pointer; text-align: inherit; }
+/* 폰에서도 화면을 다 덮지 않게 작게: 폭 250px, 사진 130px(3:4 → 약 173px 높이) */
+.modal-box.alumni-modal { max-width: 250px; padding: 16px; }   /* .modal-box 가 파일 뒤쪽에 있어 우선순위를 올림 */
+.alumni-modal .modal-title { text-align: center; font-size: 18px; margin-bottom: 10px; }
+.alumni-contact { display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.alumni-photo { width: 130px; border-radius: 10px; }
+.alumni-contact .item-meta { font-size: 13px; }
+.alumni-btns { display: flex; gap: 8px; width: 100%; }
+.alumni-btns .btn { flex: 1; padding: 9px 6px; font-size: 14px; border-radius: 10px; }
+.alumni-modal .modal-body p.alumni-none { color: var(--muted); margin: 0; }
 .sc-name small { color: var(--muted); font-size: 12px; font-weight: 500; }
 .profile-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.profile-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.btn.contact-call { background: #e3f2fd; color: #1565c0; }
+.btn.contact-sms { background: #e8f5e9; color: #2e7d32; }
 
 /* ---------- 출석 ---------- */
 .today-box { display: flex; justify-content: space-between; align-items: center; gap: 12px; background: #f8f9fa; border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
@@ -448,3 +461,153 @@ a.item-card:hover { box-shadow: 0 4px 14px rgba(0,0,0,.1); }
 .cell-mark { border: none; background: none; font-size: 20px; font-weight: 700; color: var(--danger); cursor: pointer; line-height: 1; padding: 0 8px; }
 .cell-mark:hover { color: #b3261e; text-decoration: underline; }
 .detail-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--line); text-align: left; }
+
+/* ---------- 🍴 급식 · 📅 행사 (NEIS) ---------- */
+.skel-card { display: grid; gap: 12px; }
+.skel { height: 14px; border-radius: 7px; background: linear-gradient(90deg, #eceff1 25%, #f5f7f8 50%, #eceff1 75%); background-size: 200% 100%; animation: skel 1.2s infinite; }
+@keyframes skel { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+.inline-error { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: #fce8e6; color: #a50e0e; border-radius: 12px; padding: 12px 14px; font-size: 14px; }
+
+.date-nav { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.date-label { display: flex; align-items: center; gap: 8px; }
+.date-label b { font-size: 18px; }
+.meal-card { padding-top: 14px; }
+.meal-type { font-size: 13px; font-weight: 700; color: #e65100; margin-bottom: 6px; }
+.meal-list { list-style: none; margin: 0; padding: 0; }
+.meal-list li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 2px; border-bottom: 1px solid var(--line); }
+.meal-list li:last-child { border-bottom: none; }
+.dish { font-size: 16px; font-weight: 600; word-break: keep-all; }
+.allergies { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px; }
+.allergy { min-width: 20px; height: 20px; padding: 0 4px; border: none; border-radius: 10px; background: #f1f3f4; color: var(--sub); font: inherit; font-size: 11px; font-weight: 700; cursor: pointer; }
+.meal-kcal { margin-top: 10px; font-size: 14px; font-weight: 700; color: var(--sub); text-align: right; }
+.meal-more { margin-top: 8px; border-top: 1px solid var(--line); padding-top: 8px; font-size: 13px; color: var(--sub); }
+.meal-more summary { cursor: pointer; font-weight: 700; color: var(--primary-dark); padding: 2px 0; }
+.meal-more ul { margin: 6px 0 0; padding-left: 18px; }
+.allergy-legend { display: grid; grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)); gap: 4px 10px; margin-top: 6px; }
+.meal-empty { text-align: center; padding: 30px 16px; }
+.meal-empty-icon { font-size: 40px; }
+.meal-empty p { color: var(--sub); margin: 8px 0 14px; }
+
+.ev-banner { display: flex; align-items: center; gap: 10px; background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 11px 14px; margin-bottom: 8px; }
+.ev-banner b { flex: 1; min-width: 0; word-break: keep-all; }
+.ev-banner small { color: var(--sub); white-space: nowrap; }
+.ev-dday { background: var(--primary-soft); color: var(--primary-dark); font-weight: 800; font-size: 13px; border-radius: 8px; padding: 3px 8px; white-space: nowrap; }
+.ev-banner.today .ev-dday { background: #00897b; color: #fff; }
+.cal-card { padding: 10px 12px 14px; margin-bottom: 12px; }
+.cal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.cal-head b { font-size: 16px; }
+.cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; }
+.cal-w { font-size: 12px; color: var(--muted); padding: 4px 0; }
+.cal-cell { position: relative; aspect-ratio: 1 / 1; max-height: 52px; border: none; background: transparent; border-radius: 10px; font: inherit; cursor: pointer; color: var(--text); display: flex; flex-direction: column; align-items: center; justify-content: center; }
+.cal-cell.blank { cursor: default; }
+.cal-cell:not(.blank):hover { background: #f1f3f4; }
+.cal-w.sun, .cal-cell.sun, .cal-cell.holiday { color: #d93025; }
+.cal-w.sat, .cal-cell.sat { color: #1a73e8; }
+.cal-cell.holiday { background: #fdecea; }
+.cal-cell.today .cal-num { font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+.cal-cell.sel { background: var(--primary); color: #fff; }
+.cal-dot { position: absolute; bottom: 5px; width: 5px; height: 5px; border-radius: 50%; background: #00897b; }
+.cal-cell.sel .cal-dot { background: #fff; }
+.ev-day { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 12px 14px; }
+.ev-day-date { font-weight: 800; margin-bottom: 6px; }
+.ev-item + .ev-item { margin-top: 8px; }
+.ev-title { font-weight: 600; word-break: keep-all; }
+.ev-item.holiday .ev-title { color: #c5221f; }
+.ev-grade { background: var(--primary-soft); color: var(--primary-dark); margin-left: 4px; }
+.ev-off { background: #fdecea; color: #c5221f; margin-left: 4px; }
+.ev-list { background: #fff; border-radius: 12px; box-shadow: var(--shadow); padding: 4px 14px; }
+.ev-row { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
+.ev-row:last-child { border-bottom: none; }
+.ev-when { flex: 0 0 74px; font-size: 13px; color: var(--sub); line-height: 1.5; }
+.ev-row .ev-item { flex: 1; min-width: 0; }
+
+/* ---------- 🪧 공지 ---------- */
+.nt-card { cursor: pointer; }
+.nt-preview { color: var(--sub); font-size: 14px; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+.nt-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; margin-top: 10px; }
+.nt-on { background: #fce8e6; color: #c5221f; }
+.nt-soon { background: var(--primary-soft); color: var(--primary-dark); }
+.nt-off { background: #f1f3f4; color: var(--muted); }
+.nt-empty { padding: 18px 16px; background: #fff; border-radius: 12px; }
+.nt-detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 12px; }
+.nt-content { font-size: 15px; line-height: 1.7; word-break: keep-all; overflow-wrap: anywhere; }
+.nt-content a { text-decoration: underline; }
+.notice-modal .modal-body { max-height: 65vh; overflow-y: auto; }
+.nt-pop { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.nt-pop + .nt-pop { margin-top: 10px; }
+.nt-pop-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.nt-pop-head b { font-size: 16px; word-break: keep-all; }
+.nt-due { flex: none; background: #fce8e6; color: #c5221f; font-size: 12px; font-weight: 800; border-radius: 8px; padding: 2px 8px; }
+.nt-more { border: none; background: none; padding: 6px 0 0; font: inherit; font-size: 13px; font-weight: 700; color: var(--primary-dark); cursor: pointer; }
+.nt-pop .nt-content { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 14px; }
+.nt-hide { margin: 12px 2px 0; font-size: 14px; color: var(--sub); }
+
+/* 팝업 오른쪽 위 모서리 닫기(✕): 바깥 모서리는 창과 같은 곡률(16px), 안쪽 모서리만 둥글게 */
+.modal-box { position: relative; }
+.modal-x { position: absolute; top: 0; right: 0; width: 38px; height: 38px; border: none; border-radius: 0 16px 0 14px;
+  background: #fce8e6; color: #c5221f; font: inherit; font-size: 16px; font-weight: 800; line-height: 1; cursor: pointer; display: grid; place-items: center; }
+.modal-x:hover { background: #f8d7d4; }
+.modal-x:active { background: #f4c1bc; }
+/* 사용자 메뉴: 내용 폭에 딱 맞게 (오른쪽 여백 없이). 이름 오른쪽만 ✕ 자리를 비움 */
+.modal-box.user-menu-modal { width: auto; max-width: none; padding: 18px 18px 18px; }
+.modal-box.user-menu-modal .modal-title { padding-right: 34px; margin-bottom: 10px; white-space: nowrap; }
+.modal-box.user-menu-modal .list-btn { padding: 11px 14px; white-space: nowrap; }
+
+/* 졸업생 창: 왼쪽 위 ℹ️ (오른쪽 ✕ 와 좌우 대칭, 노란 바탕) + 뒤집기 */
+.modal-i { position: absolute; top: 0; left: 0; z-index: 2; width: 38px; height: 38px; border: none; border-radius: 16px 0 14px 0;
+  background: #ffe58a; padding: 0; cursor: pointer; display: grid; place-items: center; }
+.modal-i:hover { background: #ffdb5c; }
+.modal-i.on { background: #ffd23f; }
+.modal-i-count { min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: #e53935; color: #fff;
+  font-size: 12px; font-weight: 800; line-height: 20px; text-align: center; }
+.modal-x { z-index: 2; }
+/* 창 높이는 앞면(사진·연락처) 기준으로 고정. 뒷면은 앞면 크기 안에 겹쳐 두고 메모 목록만 스크롤.
+   창 자체는 스크롤하지 않음 — 3D 회전의 가상 넘침 때문에 내용이 짧아도 스크롤바가 생겼음 */
+.modal-box.alumni-modal { overflow: hidden; }
+.flip { perspective: 900px; }
+.flip-inner { position: relative; transition: transform .55s ease; transform-style: preserve-3d; }
+.flip.on .flip-inner { transform: rotateY(180deg); }
+.flip-face { backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.flip-front { position: relative; }
+.flip-back { position: absolute; inset: 0; transform: rotateY(180deg); }
+.notes-face { display: flex; flex-direction: column; gap: 8px; }
+.flip.on .flip-front, .flip:not(.on) .flip-back { pointer-events: none; }
+.al-notes-head { font-size: 13px; font-weight: 800; color: #8a5a00; text-align: center; }
+.al-notes { flex: 1; min-height: 0; overflow-y: auto; display: grid; align-content: start; gap: 6px; }
+.al-note { background: #fffbea; border: 1px solid #f6e3a1; border-radius: 10px; padding: 8px 10px; }
+.al-note-text { font-size: 14px; white-space: pre-line; word-break: keep-all; overflow-wrap: anywhere; }
+.al-note textarea { font-size: 14px; padding: 6px 8px; }
+.al-note-foot { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-top: 4px; font-size: 11px; color: var(--muted); }
+.al-mini { border: none; background: none; padding: 2px 4px; font: inherit; font-size: 12px; font-weight: 700; color: var(--sub); cursor: pointer; }
+.al-mini.danger { color: var(--danger); }
+.al-mini.primary { color: var(--primary-dark); }
+.al-empty { color: var(--muted); font-size: 13px; text-align: center; padding: 18px 4px; line-height: 1.6; }
+.notes-face > textarea { font-size: 14px; padding: 8px 10px; resize: none; flex: none; }
+.notes-face > .btn { flex: none; }
+
+/* 앱을 열 때 뜨는 공지 창: 졸업생 창과 같은 크기(폭 250px · 높이 320px) 고정, 공지 목록만 스크롤 */
+.modal-box.notice-pop-modal { max-width: 250px; height: 320px; padding: 16px; display: flex; flex-direction: column; overflow: hidden; }
+.notice-pop-modal .modal-title { text-align: center; font-size: 18px; margin-bottom: 10px; padding: 0 30px; }
+.notice-pop-modal .modal-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.nt-pop-list { flex: 1; min-height: 0; overflow-y: auto; }
+.notice-pop-modal .nt-pop { padding: 9px 11px; border-radius: 10px; }
+.notice-pop-modal .nt-pop + .nt-pop { margin-top: 8px; }
+.notice-pop-modal .nt-pop-head b { font-size: 15px; }
+.notice-pop-modal .nt-pop .item-meta { font-size: 12px; }
+.notice-pop-modal .nt-hide { flex: none; margin: 10px 2px 0; font-size: 13px; }
+
+/* 학생 정보 화면 [ℹ️ 메모] 버튼과 창 (졸업생 카드 뒷면과 같은 모양 · 크기 250×320) */
+.btn.contact-memo { background: #fff4c2; color: #8a5a00; }
+.memo-count { min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px; background: #e53935; color: #fff; font-size: 11px; line-height: 18px; }
+.modal-box.memo-modal { height: 320px; display: flex; flex-direction: column; }
+.memo-modal .modal-body { flex: 1; min-height: 0; display: flex; }
+.memo-face { flex: 1; min-height: 0; }
+span.modal-i { cursor: default; }
+span.modal-i:hover { background: #ffe58a; }
+
+/* 졸업 카드 뒷면 탭: 졸업 후 | 재학 중 (재학 중 메모는 회색 카드, 입력칸 없음) */
+.al-tabs { display: flex; gap: 3px; background: #f1f3f4; border-radius: 9px; padding: 3px; flex: none; }
+.al-tab { flex: 1; border: none; background: transparent; border-radius: 7px; padding: 5px 0; font: inherit; font-size: 12px; font-weight: 700; color: var(--sub); cursor: pointer; }
+.al-tab b { font-weight: 800; }
+.al-tab.on { background: #ffe58a; color: #8a5a00; }
+.al-note.old { background: #f8f9fa; border-color: var(--line); }

@@ -33,9 +33,13 @@ export const MAX_FILE_MB = 10;
 export const CATEGORIES = {
   bitnada: { label: "빛나다",   icon: "✨", color: "#f9ab00", desc: "야간자율 프로그램" },
   club:    { label: "동아리",   icon: "🎨", color: "#34a853", desc: "정규 창체 활동" },
-  subject: { label: "교과",     icon: "📚", color: "#4285f4", desc: "정규 교과 활동" },
-  contest: { label: "심화탐구", icon: "🔬", color: "#a142f4", desc: "학기말 발표대회" }
+  contest: { label: "심화탐구", icon: "🔬", color: "#a142f4", desc: "학기말 발표대회" },
+  subject: { label: "교과",     icon: "📚", color: "#4285f4", desc: "정규 교과 활동" }
 };
+
+// 졸업생 사진 (record 앱과 같은 곳·같은 이름 규칙): {주소}{졸업연도}_{3학년 학번}.jpg
+// 졸업 처리 뒤 record 저장소 images/old/ 에 사진 파일을 이 이름으로 넣어 두면 [🎓 졸업생] 에 나옵니다.
+export const GRAD_PHOTO_BASE = "https://puroome.github.io/record/images/old/";
 
 // ENGLISH 메뉴의 앱 — 새 탭에서 바로 엽니다 (각 앱의 Google 로그인·승인은 앱이 알아서)
 export const ENGLISH_APPS = {

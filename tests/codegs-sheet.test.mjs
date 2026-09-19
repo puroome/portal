@@ -83,10 +83,16 @@ assert.equal(ctx.currentSchoolYear_(), d.getMonth() + 1 <= 2 ? d.getFullYear() -
 const old = fakeSheet([["구분(학생/교사)", "ID(학번/교사ID)", "이름", "학년", "반", "번호", "초기 비밀번호", "", "UID(자동)", "", "2025년"]]);
 ctx.ensureHeaders_(old);
 assert.equal(old.grid[0][7], "상태");            // 빠진 칸은 제자리에 채움
-assert.equal(old.grid[0][9], "");                // 없앤 "학교 Google 계정" 열은 다시 만들지 않음
+assert.equal(old.grid[0][9], "전화번호");        // 빈 J열에 새 "전화번호" 열 (없앤 "학교 Google 계정" 은 다시 만들지 않음)
 assert.equal(old.grid[0][10], "2025년");
 
 // ---- 4) 예전 시트에 남아 있는 "학교 Google 계정" 열은 무시하고, 동기화 때 DB 의 이메일을 지움 ----
 assert.equal(ctx.profileOf_(senior).googleEmail, null);
+
+// ---- 5) 전화번호: 숫자만, 시트가 앞 0 을 떼어 낸 값은 되살림, 빈 칸은 DB 에서 지움 ----
+assert.equal(ctx.phoneOf_("010-1234-5678"), "01012345678");
+assert.equal(ctx.phoneOf_("1012345678"), "01012345678");
+assert.equal(ctx.phoneOf_(""), "");
+assert.equal(ctx.profileOf_(senior).phone, null);
 
 });

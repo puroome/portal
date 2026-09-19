@@ -6,6 +6,7 @@ import { setTitle, go } from "./nav.js";
 import { getStudents, getStudentSids, filterStudents, gradeOptions, classOptions, studentCard, hydratePhotos } from "./directory.js";
 import { loadAllPrograms, loadPersonSubs, renderSubmissionList, canView } from "./programs.js";
 import { loadStudentAttendance, cardSchedule } from "./attendance.js";
+import { openNotesDialog, countNotes } from "./person-notes.js";
 
 export async function renderSearch(main, params, alive) {
   if (!isTeacher()) { go("#/home"); return; }
@@ -57,6 +58,7 @@ export async function renderProfile(main, { sid }, alive) {
   const subs = await loadPersonSubs(person, Object.values(programsById).filter(canView));
   if (!alive()) return;
   const st = students.find(s => s.sid === sid) || { sid, name: subs[0]?.name || "" };
+  const phone = String(st.phone || "").replace(/[^0-9]/g, "");   // 계정 시트 [전화번호] 열 → 🔥Firebase 동기화
 
   const byCat = {};
   subs.forEach(s => { (byCat[s.category] ||= []).push(s); });
@@ -69,7 +71,12 @@ export async function renderProfile(main, { sid }, alive) {
           <div class="hello-name">${esc(st.name)}</div>
           <div class="item-meta">${esc(sid)}${st.grade ? ` · ${esc(st.grade)}학년 ${esc(st.cls)}반 ${esc(st.no)}번` : ""}</div>
         </div>
-        <a class="btn small ghost" href="#/grades/${encodeURIComponent(sid)}">📊 성적 보기</a>
+        <div class="profile-actions">
+          ${st.uid ? `<button class="btn small contact-memo" id="btnMemo">ℹ️ 메모<span class="memo-count" hidden></span></button>` : ""}
+          ${phone ? `<a class="btn small contact-call" href="tel:${phone}">📞 전화</a>
+          <a class="btn small contact-sms" href="sms:${phone}">📩 문자</a>` : ""}
+          <a class="btn small ghost" href="#/grades/${encodeURIComponent(sid)}">📊 성적</a>
+        </div>
       </div>
 
       <div class="section-head"><h3>활동 자료 (${subs.length})</h3></div>
@@ -100,4 +107,12 @@ export async function renderProfile(main, { sid }, alive) {
     drawSubs();
   });
   drawSubs();
+
+  // ℹ️ 메모: 졸업생 카드 뒷면과 같은 창. 메모가 있으면 버튼에 개수
+  const memoBtn = $("#btnMemo", main);
+  if (memoBtn) {
+    const setCount = n => { const c = $(".memo-count", memoBtn); c.hidden = !n; c.textContent = n; };
+    countNotes(st.uid, "school").then(n => { if (memoBtn.isConnected) setCount(n); }).catch(() => {});
+    memoBtn.onclick = () => openNotesDialog({ uid: st.uid, name: st.name }, setCount);
+  }
 }

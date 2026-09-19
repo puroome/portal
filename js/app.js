@@ -9,6 +9,9 @@ import * as attendance from "./attendance.js";
 import * as grades from "./grades.js";
 import * as students from "./students.js";
 import * as english from "./english.js";
+import * as alumni from "./alumni.js";
+import * as schoolInfo from "./school-info.js";
+import * as notices from "./notices.js";
 import { getStudents, filterStudents } from "./directory.js";
 
 // 우클릭 메뉴·이미지/링크 끌어가기 막기 (텍스트 선택은 css 에서 막음)
@@ -39,7 +42,15 @@ const routes = [
   ["grades/:sid", grades.renderGrades],
   ["students", students.renderSearch],
   ["students/:q", students.renderSearch],
-  ["student/:sid", students.renderProfile]
+  ["student/:sid", students.renderProfile],
+  ["notice", notices.renderNotices],
+  ["notice/:mode", notices.renderNotices],
+  ["meal", schoolInfo.renderMeal],
+  ["meal/:date", schoolInfo.renderMeal],
+  ["events", schoolInfo.renderEvents],
+  ["events/:ym", schoolInfo.renderEvents],
+  ["alumni", alumni.renderAlumni],
+  ["alumni/:year", alumni.renderAlumni]
 ];
 
 function matchRoute(hash) {
@@ -102,10 +113,15 @@ function renderHome(main) {
   setTitle(APP_NAME, null);
   const p = session.profile;
   const teacher = isTeacher();
+  // 순서(사용자 지정): 공지(교사) · 급식 · 행사 · 성적 · 빛나다 · 동아리 · 심화탐구 · 교과 · ENGLISH · 졸업생(교사)
   const minis = [
+    ...(teacher ? [miniCard("#/notice", "🪧", "공지", "공지 띄우기·관리", "#e53935")] : []),
+    miniCard("#/meal", "🍴", "급식", "오늘의 식단", "#fb8c00"),
+    miniCard("#/events", "📅", "행사", "학사일정", "#00897b"),
+    miniCard("#/grades", "📊", "성적", teacher ? "전체 학생 성적 조회" : "내 성적 조회", "#ea4335"),
     ...Object.entries(CATEGORIES).map(([key, c]) => miniCard(`#/p/${key}`, c.icon, c.label, c.desc, c.color)),
     miniCard("#/english", "🌏", "ENGLISH", "Voca · Novel", "#3949ab"),
-    miniCard("#/grades", "📊", "성적확인", teacher ? "전체 학생 성적 조회" : "내 성적 조회", "#ea4335")
+    ...(teacher ? [miniCard("#/alumni", "🎓", "졸업생", "졸업 앨범 · 연락처", "#795548")] : [])
   ].join("");
 
   main.innerHTML = `
@@ -153,11 +169,12 @@ function openUserMenu() {
     title: session.profile.name,
     html: `
       <div class="menu-list">
-        <button class="list-btn" data-menu="pw">🔑 비밀번호 변경</button>
+        <button class="list-btn" data-menu="pw">🔑 PW 변경</button>
         <button class="list-btn danger" data-menu="logout">↩️ 로그아웃</button>
       </div>`,
     okText: null,
-    cancelText: "닫기",
+    closeX: true,               // 닫기 버튼 줄 대신 모서리 ✕ (바깥을 눌러도 닫힘)
+    className: "user-menu-modal",
     onOpen: (box, close) => {
       box.addEventListener("click", async e => {
         const act = e.target.closest("[data-menu]")?.dataset.menu;
@@ -206,6 +223,8 @@ auth.onAuthStateChanged(async user => {
     showView("app");
     if (p.mustChangePw) await changePasswordDialog(true);
     route();
+    // 공지 기간 중인 공지가 있으면 앱을 열 때 한 번 띄움 (학생·교사 모두)
+    notices.showActiveNotices().catch(err => console.warn("공지를 불러오지 못했습니다", err));
   } catch (err) {
     toast(err.message);
     showView("login");

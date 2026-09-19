@@ -11,11 +11,11 @@ let chart = null;
 export async function renderGrades(main, { sid }, alive) {
   if (isTeacher()) {
     if (!sid) return renderTeacherSearch(main, alive);
-    setTitle("📊 성적확인", "#/grades");
+    setTitle("📊 성적", "#/grades");
   } else {
     if (sid && sid !== session.profile.sid) { go("#/grades"); return; }
     sid = session.profile.sid;
-    setTitle("📊 성적확인");
+    setTitle("📊 성적");
   }
 
   const [scores, info, students] = await Promise.all([
@@ -42,7 +42,7 @@ export async function renderGrades(main, { sid }, alive) {
 }
 
 async function renderTeacherSearch(main, alive) {
-  setTitle("📊 성적확인");
+  setTitle("📊 성적");
   const students = await getStudents();
   if (!alive()) return;
   main.innerHTML = `

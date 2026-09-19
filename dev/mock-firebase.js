@@ -15,22 +15,40 @@
   const pad = n => String(n).padStart(2, "0");
   const dk = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
   const yest = new Date(Date.now() - 86400000);
+  const dd = n => dk(new Date(now + n * 86400000));   // 오늘 + n일
   let data = {
     info: { lastUpdated: "2026-09-10" },
     users: {
       uT1: { role: "teacher", loginId: "t1", name: "김교사", active: true },
       uT2: { role: "teacher", loginId: "t2", name: "박교사", active: true },
-      uS1: { role: "student", loginId: "10101", sid: "10101", name: "홍길동", grade: "1", cls: "1", no: "1", active: true, mustChangePw: false },
+      uS1: { role: "student", loginId: "10101", sid: "10101", name: "홍길동", grade: "1", cls: "1", no: "1", active: true, mustChangePw: false, phone: "01012345678" },
       uS2: { role: "student", loginId: "10102", sid: "10102", name: "김철수", grade: "1", cls: "1", no: "2", active: true },
       uS3: { role: "student", loginId: "20301", sid: "20301", name: "이영희", grade: "2", cls: "3", no: "1", active: true },
       uS4: { role: "student", loginId: "20101", sid: "20101", name: "박민수", grade: "2", cls: "1", no: "1", active: true, sids: { "10103": 2025, "20101": 2026 } },
       uS7: { role: "student", loginId: "10103", sid: "10103", name: "새내기", grade: "1", cls: "1", no: "3", active: true, sids: { "10103": 2026 } },
       uG1: { role: "student", loginId: null, sid: null, name: "졸업한선배", active: false, graduated: 2026, sids: { "30101": 2025 } },
+      rec2026_3102: { role: "student", name: "옛졸업생", grade: "3", cls: "1", no: "2", active: false, graduated: 2026, sids: { "3102": 2025 }, phone: "01099998888", photo: "https://puroome.github.io/record/images/old/2026_3102.jpg", importedFrom: "record" },
+      rec2025_3101: { role: "student", name: "재작년졸업", grade: "3", cls: "1", no: "1", active: false, graduated: 2025, sids: { "3101": 2024 }, photo: "https://puroome.github.io/record/images/old/2025_3101.jpg", importedFrom: "record" },
       uS5: { role: "student", loginId: "20102", sid: "20102", name: "최지우", grade: "2", cls: "1", no: "2", active: true },
       uS6: { role: "student", loginId: "30101", sid: "30101", name: "정다은", grade: "3", cls: "1", no: "1", active: true }
     },
     students: { "10101": { name: "홍길동", scores }, "10102": { name: "김철수" } },
     portal: {
+      alumniNotes: {
+        rec2026_3102: {
+          m1: { text: "○○대 간호학과 진학", createdBy: "박교사", createdByUid: "uT2", createdAt: now - 2e9 },
+          m2: { text: "3학년 반장, 간호사 희망", kind: "school", createdBy: "김교사", createdByUid: "uT1", createdAt: now - 3e10 },
+          m3: { text: "꼬리표 없는 예전 메모 (2025년 기록 → 재학 중)", createdBy: "박교사", createdByUid: "uT2", createdAt: new Date(2025, 9, 1).getTime() }
+        },
+        uS1: { m1: { text: "수학 동아리 회장, 진로 상담 필요", createdBy: "박교사", createdByUid: "uT2", createdAt: now - 5e8 } }
+      },
+      // 🪧 공지: 오늘 기준 날짜 (dd(n) = 오늘+n일)
+      notices: {
+        n1: { title: "2학기 방과후 수강 신청 안내", content: "9월 25일까지 담임 선생님께 신청서를 내 주세요.\n자세한 안내: https://example.com/afterschool", startDate: dd(-3), endDate: dd(6), createdBy: "김교사", createdByUid: "uT1", createdAt: now - 3e8 },
+        n2: { title: "내일 체육복 등교", content: "체육한마당 연습이 있습니다.", startDate: dd(0), endDate: dd(1), createdBy: "박교사", createdByUid: "uT2", createdAt: now - 1e8 },
+        n3: { title: "중간고사 시험 범위 공지", content: "", startDate: dd(5), endDate: dd(12), createdBy: "김교사", createdByUid: "uT1", createdAt: now - 5e7 },
+        n4: { title: "1학기 도서 반납", content: "지난 공지", startDate: dd(-40), endDate: dd(-30), createdBy: "박교사", createdByUid: "uT2", createdAt: now - 9e9 }
+      },
       programs: {
         p1: { category: "club", year: 2026, title: "로봇공학 동아리 (김교사·비공개)", description: "그날 활동을 적어 주세요.", allowFiles: true, closed: false, private: true, members: { "10101": true, "10102": true }, createdBy: "김교사", createdByUid: "uT1", createdAt: now - 5e8 },
         p2: { category: "bitnada", year: 2026, title: "빛나다 진로탐색 (박교사·공통)", allowFiles: true, private: false, days: { 5: true }, members: { "10101": true, "10102": true }, createdBy: "박교사", createdByUid: "uT2", createdAt: now - 4e8 },
@@ -148,4 +166,21 @@
   const database = () => ({ ref });
   database.ServerValue = { TIMESTAMP: { ".sv": "timestamp" } };
   window.firebase = { initializeApp: () => {}, auth, database };
+
+  // Apps Script 중계 흉내: 급식·학사일정은 dev/neis-sample.json 표본(2026-08~10 급식, 2026학년도 일정)으로 답합니다.
+  // 주소에 ?neisFail 을 붙이면 오류를 흉내 냅니다(재시도 버튼 확인용).
+  const realFetch = window.fetch.bind(window);
+  let sample = null;
+  window.fetch = async (url, opt) => {
+    if (String(url).includes("script.google.com") && opt && opt.body) {
+      const req = JSON.parse(opt.body);
+      if (req.action === "neis") {
+        sample ||= await realFetch("/dev/neis-sample.json").then(r => r.json());
+        await new Promise(r => setTimeout(r, 500));
+        if (location.search.includes("neisFail")) return new Response(JSON.stringify({ error: "급식·학사일정을 불러오지 못했습니다(일시적 오류)." }));
+        return new Response(JSON.stringify({ rows: sample[req.kind].filter(r => r.date >= req.from && r.date <= req.to) }));
+      }
+    }
+    return realFetch(url, opt);
+  };
 })();

@@ -22,24 +22,27 @@ export function toast(msg) {
 }
 
 // 모달: 확인 → true, 취소/닫기 → false
-export function modal({ title = "알림", html = "", okText = "확인", cancelText = null, wide = false, onOpen = null, beforeOk = null }) {
+// dismissible: 창 바깥을 누르면 닫힘 (취소 버튼이 있으면 원래 바깥 클릭으로 닫힘). 버튼이 하나도 없으면 버튼 줄을 그리지 않습니다.
+// closeX: 오른쪽 위 모서리에 닫기(✕) 버튼 — 창 모서리 곡률에 맞춘 모양
+export function modal({ title = "알림", html = "", okText = "확인", cancelText = null, wide = false, onOpen = null, beforeOk = null, dismissible = false, className = "", closeX = false }) {
   return new Promise(resolve => {
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay show";
     overlay.innerHTML = `
-      <div class="modal-box ${wide ? "wide" : ""}">
+      <div class="modal-box ${wide ? "wide" : ""} ${className}">
+        ${closeX ? `<button class="modal-x" data-act="cancel" aria-label="닫기">✕</button>` : ""}
         <div class="modal-title">${esc(title)}</div>
         <div class="modal-body">${html}</div>
-        <div class="modal-btns">
+        ${okText || cancelText ? `<div class="modal-btns">
           ${cancelText ? `<button class="btn ghost" data-act="cancel">${esc(cancelText)}</button>` : ""}
           ${okText ? `<button class="btn primary" data-act="ok">${esc(okText)}</button>` : ""}
-        </div>
+        </div>` : ""}
       </div>`;
     document.body.appendChild(overlay);
     const box = overlay.querySelector(".modal-box");
     const close = result => { overlay.remove(); resolve(result); };
     overlay.addEventListener("click", async e => {
-      if (e.target === overlay && cancelText) return close(false);
+      if (e.target === overlay && (cancelText || dismissible || closeX)) return close(false);
       const act = e.target.closest("[data-act]")?.dataset.act;
       if (act === "cancel") close(false);
       if (act === "ok") {

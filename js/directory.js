@@ -23,7 +23,7 @@ export function parseSid(sid) {
   return { grade: "", cls: "", no: "" };
 }
 
-const toEntry = u => ({ uid: u.uid, sid: String(u.sid), name: u.name || "", grade: String(u.grade ?? ""), cls: String(u.cls ?? ""), no: String(u.no ?? ""), sids: u.sids || null });
+const toEntry = u => ({ uid: u.uid, sid: String(u.sid), name: u.name || "", grade: String(u.grade ?? ""), cls: String(u.cls ?? ""), no: String(u.no ?? ""), sids: u.sids || null, phone: String(u.phone || "") });
 
 // 지금 재학 중인 학생 (지금 학번 기준)
 export async function getStudents(force = false) {
@@ -32,6 +32,11 @@ export async function getStudents(force = false) {
     .filter(u => u.sid && u.active !== false)
     .map(toEntry)
     .sort((a, b) => sidCompare(a.sid, b.sid));
+}
+
+// 졸업생 (users/{uid}/graduated = 졸업연도). record 앱에서 옮겨 온 졸업생도 포함.
+export async function getGraduates() {
+  return (await loadUsers()).filter(u => u.graduated);
 }
 
 // { 학번: 학생 } — year 를 주면 그 학년도에 그 학번을 쓴 학생(졸업생 포함)으로 찾습니다.
@@ -98,8 +103,9 @@ export function studentCard(s, href) {
 }
 
 export function hydratePhotos(container) {
-  container.querySelectorAll("[data-photo-sid]").forEach(async box => {
-    const url = await studentPhoto(box.dataset.photoSid);
+  // data-photo-url 이 있으면 그 주소(졸업생), 없으면 students/{학번}/photo
+  container.querySelectorAll("[data-photo-sid], [data-photo-url]").forEach(async box => {
+    const url = box.dataset.photoUrl ?? await studentPhoto(box.dataset.photoSid);
     if (!url || !box.isConnected) return;
     // 칸 안에 투명하게 겹쳐 붙여야 lazy 로딩이 동작합니다(숨겨 둔 lazy 이미지는 브라우저가 불러오지 않음).
     // 다 불러오면 보이게 하고 👤 를 치우며, 실패하면 이미지를 빼서 👤 를 남깁니다.
