@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>폰트 비교</title>
+<style>
+  body { margin: 0; font-family: 'Malgun Gothic', sans-serif; background: #e8eaed; }
+  header { position: sticky; top: 0; z-index: 2; background: #fff; padding: 10px 16px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; box-shadow: 0 1px 4px rgba(0,0,0,.1); }
+  header b { margin-right: 8px; }
+  header button { border: 1px solid #dadce0; background: #fff; border-radius: 16px; padding: 5px 14px; cursor: pointer; font: inherit; }
+  header button.on { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+  .grid { display: flex; gap: 14px; padding: 14px; overflow-x: auto; }
+  .col { flex: 0 0 auto; text-align: center; }
+  .col h4 { margin: 0 0 6px; font-size: 15px; }
+  .col small { color: #666; }
+  .frame { width: 375px; height: 700px; border: 1px solid #ccc; border-radius: 12px; overflow: hidden; background: #fff; }
+  .frame iframe { width: 375px; height: 700px; border: 0; }
+</style>
+</head>
+<body>
+<header><b>화면</b><span id="screens"></span></header>
+<div class="grid" id="grid"></div>
+<script>
+// 개발용: 목업 앱을 폰트별로 나란히 띄워 비교 (배포 안 함)
+const FONTS = [
+  { name: "Noto Sans KR", note: "예전 폰트", family: "'Noto Sans KR'", css: "https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;800&display=swap" },
+  { name: "Pretendard", note: "", family: "'Pretendard Variable'", css: "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" },
+  { name: "SUIT", note: "지금 쓰는 폰트", family: "'SUIT Variable'", css: "https://cdn.jsdelivr.net/gh/sun-typeface/SUIT@2/fonts/variable/woff2/SUIT-Variable.css" },
+  { name: "Spoqa Han Sans Neo", note: "", family: "'Spoqa Han Sans Neo'", css: "https://cdn.jsdelivr.net/gh/spoqa/spoqa-han-sans@latest/css/SpoqaHanSansNeo.css" },
+  { name: "IBM Plex Sans KR", note: "", family: "'IBM Plex Sans KR'", css: "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" },
+];
+const SCREENS = [
+  ["홈", "#/home"], ["공지", "#/notice"], ["급식", "#/meal/20260918"], ["동아리 반", "#/prog/p1"], ["학생 정보", "#/student/10101"], ["성적", "#/grades/10101"], ["행사", "#/events"],
+];
+let cur = 0;
+// 파일을 직접 열면(file://) 앱이 안 뜸 → 목업 서버 주소로 열어야 함
+if (location.protocol === "file:") {
+  document.body.innerHTML = `<p style="padding:24px;font-size:18px">이 파일은 목업 서버 주소로 여세요:<br><b>http://localhost:5178/dev/font-compare.html</b><br><small>(목업 서버가 켜져 있어야 합니다)</small></p>`;
+  throw new Error("file://");
+}
+// 목업 교사(김교사)로 자동 로그인 — iframe 은 이 탭의 sessionStorage 를 같이 씀
+try { if (!sessionStorage.getItem("mockUser")) sessionStorage.setItem("mockUser", "t1@gnhs-portal.app"); } catch {}
+function applyFont(ifr, f) {
+  const d = ifr.contentDocument;
+  if (!d || !d.head) return;
+  if (f.css && !d.getElementById("cmpFontCss")) {
+    const l = d.createElement("link"); l.id = "cmpFontCss"; l.rel = "stylesheet"; l.href = f.css; d.head.appendChild(l);
+  }
+  if (!d.getElementById("cmpFont")) {
+    const s = d.createElement("style"); s.id = "cmpFont";
+    s.textContent = `body, button, input, select, textarea { font-family: ${f.family}, 'Noto Sans KR', sans-serif !important; }`;
+    d.head.appendChild(s);
+  }
+}
+function draw() {
+  document.getElementById("screens").innerHTML = SCREENS.map(([t], i) => `<button class="${i === cur ? "on" : ""}" data-i="${i}">${t}</button>`).join(" ");
+  document.querySelectorAll("#screens button").forEach(b => b.onclick = () => { cur = +b.dataset.i; draw(); });
+  document.getElementById("grid").innerHTML = FONTS.map((f, i) => `
+    <div class="col"><h4>${i + 1}. ${f.name} <small>${f.note}</small></h4>
+      <div class="frame"><iframe data-f="${i}" src="../index.html"></iframe></div></div>`).join("");
+  document.querySelectorAll("#grid iframe").forEach(ifr => {
+    const f = FONTS[+ifr.dataset.f];
+    ifr.onload = () => {
+      // 앱은 시작할 때 늘 홈으로 가므로, 뜬 뒤에 고른 화면으로 이동
+      let n = 0, moved = false;
+      const t = setInterval(() => {
+        applyFont(ifr, f);
+        const d = ifr.contentDocument;
+        d?.querySelector(".modal-x")?.click();   // 앱 열 때 뜨는 공지 창 닫기
+        if (!moved && n >= 5 && !d?.querySelector(".modal-box")) { moved = true; ifr.contentWindow.location.hash = SCREENS[cur][1]; }
+        if (++n > 20) clearInterval(t);
+      }, 300);
+    };
+  });
+}
+draw();
+</script>
+</body>
+</html>

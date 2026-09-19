@@ -16,7 +16,7 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; }
 body {
-  font-family: 'Noto Sans KR', 'Malgun Gothic', -apple-system, sans-serif;
+  font-family: 'SUIT Variable', 'Malgun Gothic', -apple-system, sans-serif;
   background: var(--bg);
   color: var(--text);
   font-size: 15px;
@@ -533,8 +533,9 @@ button.student-card { border: none; padding: 0; font: inherit; cursor: pointer; 
 .ev-row .ev-item { flex: 1; min-width: 0; }
 
 /* ---------- 🪧 공지 ---------- */
-.nt-card { cursor: pointer; }
-.nt-preview { color: var(--sub); font-size: 14px; margin-top: 4px; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; }
+.nt-card { cursor: default; }
+.nt-preview { color: var(--sub); font-size: 14px; margin-top: 4px; word-break: keep-all; overflow-wrap: anywhere; }   /* 내용 전부 (상세 창 없음) */
+.nt-preview a { text-decoration: underline; }
 .nt-actions { display: flex; gap: 6px; justify-content: flex-end; align-items: center; margin-top: 10px; }
 .nt-on { background: #fce8e6; color: #c5221f; }
 .nt-soon { background: var(--primary-soft); color: var(--primary-dark); }
@@ -636,3 +637,109 @@ span.modal-i:hover { background: #ffe58a; }
 .home-btn svg { fill: #3c4043; }
 /* 사용자 메뉴: 이름 줄을 없앤 대신 위쪽만 모서리 ✕ 높이만큼 비움 */
 .modal-box.user-menu-modal { padding-top: 46px; }
+
+/* 상단 뒤로가기: 크고 진하게 */
+#backBtn .back-ico { width: 30px; height: 30px; fill: none; stroke: #202124; stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round; }
+/* 관리 화면 머리: 학년도 · 프로그램 n개 · ➕ 를 한 줄에 */
+.prog-filter.manage-bar { display: flex; align-items: center; gap: 10px; }
+.prog-filter.manage-bar select { width: auto; }
+.mh-count { flex: 1; font-size: 14px; color: var(--sub); }
+.mh-count b { color: var(--text); }
+.add-btn { font-size: 15px; padding: 6px 12px; line-height: 1; }
+/* 아이콘만 있는 버튼 (CSV 내려받기) */
+.btn.icon-only { padding: 6px 9px; }
+.dl-ico { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+/* 추가 버튼(새 프로그램·새 공지·새 반): 파란 버튼 위 노란 십자 */
+.add-btn { padding: 6px 10px; }
+.plus-ico { width: 20px; height: 20px; fill: none; stroke: #ffd23f; stroke-width: 3.2; stroke-linecap: round; }
+/* 화살표가 2·3개일 때도 같은 크기 칸에 (겹쳐 보이게 조금 넓게) */
+#backBtn { width: 44px; }
+/* 방과후·야간자율 반 만들기·관리 창: 명단 개수·안내 문구 숨김 (사용자 요청) */
+.att-group-modal .mpCount, .att-group-modal .mpStudents > .item-meta { display: none; }
+
+/* 공지 기간(연도 없이 한 칸) + 공지 학년 — 폰에서도 한 줄 */
+.nt-when { display: flex; flex-wrap: wrap; gap: 10px 10px; align-items: flex-start; }
+.nt-when > .field { margin-bottom: 14px; }
+.nt-period { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #dadce0; border-radius: 10px; background: #fff; padding: 9px 10px; }
+.nt-date { position: relative; cursor: pointer; white-space: nowrap; }
+.nt-date b { font-weight: 700; color: var(--primary-dark); }
+.nt-date input { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; opacity: 0; cursor: pointer; }
+.nt-tilde { color: var(--muted); }
+.nt-grades { display: flex; gap: 8px; padding: 9px 2px; }
+/* 학년 알약 (공지 창 D-n 왼쪽 · 교사 공지 카드) */
+.grade-pills { display: inline-flex; gap: 3px; }
+.grade-pill { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--primary-soft); color: var(--primary-dark);
+  font-size: 11px; font-weight: 800; line-height: 20px; text-align: center; }
+.grade-pill.all { background: #e6f4ea; color: #137333; }
+.nt-pop-tags { display: inline-flex; align-items: center; gap: 5px; flex: none; }
+.field .dow { color: var(--primary-dark); font-weight: 800; margin-left: 2px; }
+/* 기간 한 칸: 날짜가 비었을 때 흐린 글자, ✕ 로 비우기 */
+.nt-date b.ph { color: var(--muted); font-weight: 600; }
+.period-clear { border: none; background: #f1f3f4; color: var(--sub); width: 22px; height: 22px; border-radius: 50%; font-size: 12px; line-height: 1; cursor: pointer; margin-left: 2px; }
+.period-field { margin-bottom: 14px; }
+/* 체크박스 두 개: 상자와 글자는 붙이고, 두 항목 사이는 넓게 */
+.check-pair { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.check-pair .check-line { gap: 4px; }
+.check-pair .check-line input { margin: 0; }
+/* 팝업이 떠 있는 동안 뒤 화면 멈춤 (창 안 목록만 스크롤) */
+html.modal-open, html.modal-open body { overflow: hidden; }
+.modal-overlay { overscroll-behavior: contain; }
+.modal-box, .al-notes, .nt-pop-list { overscroll-behavior: contain; }
+.chart-modal .modal-title { padding-right: 36px; }   /* 제목이 모서리 ✕ 와 겹치지 않게 */
+.page-title.clickable { cursor: pointer; }
+
+/* 학생 미제출: 빨간 글씨 + 메뉴 카드 오른쪽 위 점멸하는 빨간 숫자 */
+.not-submitted { color: #d93025; font-weight: 700; }
+.mini-card { position: relative; }
+.pend-badge { position: absolute; top: 8px; right: 8px; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
+  background: #e53935; color: #fff; font-size: 12px; font-weight: 800; line-height: 22px; text-align: center;
+  box-shadow: 0 1px 4px rgba(229,57,53,.5); animation: pend-blink 1.1s ease-in-out infinite; pointer-events: none; }
+@keyframes pend-blink { 0%, 100% { opacity: 1; } 50% { opacity: .15; } }
+/* 기기의 "움직임 줄이기" 설정과 상관없이 늘 점멸 (사용자 요청 — 이 PC 도 애니메이션 효과가 꺼져 있었음) */
+/* 공지 대상: 내 담당 프로그램 */
+.nt-grades label.off { opacity: .35; }
+.grade-pill.prog { background: #fef7e0; color: #8a5a00; max-width: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nt-grades { align-items: center; flex-wrap: wrap; }
+.nt-grades select.nt-mine { width: auto; max-width: 170px; padding: 6px 8px; font-size: 14px; }
+.sub-done { color: #137333; font-weight: 700; }
+.sub-expired { color: var(--text); font-weight: 700; }
+.sub-soon { color: var(--muted); }
+
+/* ---------- 반(상위 틀) · 과제(안쪽) ---------- */
+/* 반 = 메뉴 색이 옅게 깔린 머리 + 같은 판 안에 과제 목록(왼쪽 세로선으로 묶음) */
+.prog-shell { --tint: #e8f0fe; --ink: #1967d2; --rail: #aecbfa;
+  background: #fff; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; box-shadow: var(--shadow); margin-bottom: 12px; }
+.prog-shell.cat-bitnada { --tint: #fef7e0; --ink: #8a5a00; --rail: #fbd872; }
+.prog-shell.cat-club    { --tint: #e6f4ea; --ink: #137333; --rail: #a8dab5; }
+.prog-shell.cat-contest { --tint: #f3e8fd; --ink: #7627bb; --rail: #d7aefb; }
+.prog-shell.cat-subject { --tint: #e8f0fe; --ink: #1967d2; --rail: #aecbfa; }
+.prog-head { background: var(--tint); padding: 14px 16px 12px; }
+.prog-head .item-meta { color: var(--ink); }
+.prog-title { font-size: 20px; font-weight: 800; color: var(--ink); margin: 4px 0 0; word-break: keep-all; }
+.prog-desc { color: var(--text); font-size: 14px; margin-top: 6px; line-height: 1.6; }
+.prog-body { padding: 12px 16px 16px; }
+.task-head { display: flex; justify-content: space-between; align-items: center; font-size: 14px; font-weight: 700; color: var(--sub); margin: 2px 0 8px; }
+.task-rail { border-left: 3px solid var(--rail); padding-left: 12px; display: grid; gap: 8px; }
+.task-card { background: #f8f9fa; border-radius: 10px; padding: 9px 12px; }
+.task-card.clickable { cursor: pointer; }
+.task-card.clickable:hover { background: #f1f3f4; }
+.task-title { font-size: 15px; font-weight: 700; margin-top: 2px; word-break: keep-all; }
+.task-desc { font-size: 13px; color: var(--sub); margin-top: 4px; line-height: 1.55; }
+.task-line { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 6px; font-size: 13px; }
+.task-go { background: var(--primary); color: #fff; border-radius: 8px; padding: 4px 12px; font-size: 13px; font-weight: 700; }
+.task-go.ghost { background: #fff; color: var(--sub); border: 1px solid #dadce0; }
+.task-actions { display: flex; gap: 2px; justify-content: flex-end; margin-top: 2px; }
+.task-empty { color: var(--muted); font-size: 13px; padding: 6px 0; }
+.free-box { display: block; width: 100%; border: 1px dashed #c4c7cc; border-radius: 10px; background: #fff; padding: 9px 12px; margin-bottom: 12px; font: inherit; text-align: left; }
+.free-btn { display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-weight: 700; color: var(--sub); }
+.free-top { display: flex; justify-content: space-between; align-items: center; font-weight: 700; color: var(--sub); }
+.free-list { display: grid; gap: 4px; margin-top: 6px; }
+.free-list a { font-size: 13px; color: var(--text); }
+.free-list small { color: var(--muted); margin-left: 4px; }
+.task-filter { width: auto; padding: 6px 8px; font-size: 13px; max-width: 150px; }
+
+/* 앱 이름 "광장" 글꼴 (index.html 에서 두 글자만 받음) */
+.app-name { font-family: 'Gowun Dodum', 'SUIT Variable', sans-serif; font-weight: 400;
+  /* 이 글꼴은 굵기가 하나(얇음)라 테두리를 덧그려 굵게 */
+  -webkit-text-stroke: 0.7px currentColor; letter-spacing: 0.5px; }
+.page-title .app-name { font-size: 20px; vertical-align: -1px; }

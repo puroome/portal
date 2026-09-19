@@ -2,7 +2,7 @@
 // [설정] 학교·Firebase·Apps Script 정보 (이 파일만 고치면 됩니다)
 // =======================================================
 
-export const APP_NAME = "광남고 포털";
+export const APP_NAME = "광장";
 
 // record 앱과 같은 Firebase 프로젝트를 사용합니다 (성적 데이터 students/ 공유)
 export const firebaseConfig = {
@@ -37,9 +37,22 @@ export const CATEGORIES = {
   subject: { label: "교과",     icon: "📚", color: "#4285f4", desc: "정규 교과 활동" }
 };
 
-// 졸업생 사진 (record 앱과 같은 곳·같은 이름 규칙): {주소}{졸업연도}_{3학년 학번}.jpg
-// 졸업 처리 뒤 record 저장소 images/old/ 에 사진 파일을 이 이름으로 넣어 두면 [🎓 졸업생] 에 나옵니다.
-export const GRAD_PHOTO_BASE = "https://puroome.github.io/record/images/old/";
+// 학생 사진은 포털 저장소의 images/ 폴더에 둡니다 (2026-09-19 record 저장소에서 옮겨 옴).
+//   재학생: images/{지금 학번}.jpg        졸업생: images/old/{졸업연도}_{3학년 학번}.jpg
+// 신입생 사진 추가, 졸업 처리 뒤 사진을 old/ 로 옮기는 일도 이 폴더에서 합니다.
+export const PHOTO_BASE = "images/";
+export const GRAD_PHOTO_BASE = "images/old/";
+
+// 교과 하위 교과군 (교과 → 교과군 → 프로그램). 키는 프로그램의 subjectGroup 에 저장되므로 바꾸지 마세요.
+export const SUBJECT_GROUPS = {
+  kor:  { label: "국어",   icon: "📖" },
+  math: { label: "수학",   icon: "📐" },
+  eng:  { label: "영어",   icon: "🔤" },
+  soc:  { label: "사회",   icon: "🌏" },
+  sci:  { label: "과학",   icon: "🧪" },
+  arts: { label: "예체능", icon: "🎵" },
+  lib:  { label: "교양",   icon: "🧭" }
+};
 
 // ENGLISH 메뉴의 앱 — 새 탭에서 바로 엽니다 (각 앱의 Google 로그인·승인은 앱이 알아서)
 export const ENGLISH_APPS = {

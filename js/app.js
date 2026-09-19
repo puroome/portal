@@ -28,10 +28,13 @@ $("#loginTitle").textContent = APP_NAME;
 const routes = [
   ["home", renderHome],
   ["p/:cat", programs.renderCategory],
+  ["sg/:group", programs.renderSubjectGroup],
+  ["sg/:group/:mode", programs.renderSubjectGroup],
   ["p/:cat/:mode", programs.renderCategory],
   ["prog/:pid", programs.renderProgram],
   ["submit/:pid", programs.renderSubmitForm],
   ["submit/:pid/:subId", programs.renderSubmitForm],
+  ["submit/:pid/a/:aid", programs.renderSubmitForm],
   ["sub/:pid/:sid/:subId", programs.renderSubmission],
   ["att", attendance.renderAttendance],
   ["att/:mode", attendance.renderAttendance],
@@ -124,7 +127,10 @@ function renderHome(main) {
   ].join("");
 
   // 제목 앞에 앱 아이콘 (첫 화면만)
-  $("#pageTitle").innerHTML = `<img class="title-icon" src="favicon.png" alt="">${esc(APP_NAME)}`;
+  $("#pageTitle").innerHTML = `<img class="title-icon" src="favicon.png" alt=""><span class="app-name">${esc(APP_NAME)}</span>`;
+  // 첫 화면 제목(앱 이름)을 누르면 새로고침 (다른 화면에서는 setTitle 이 지움)
+  $("#pageTitle").onclick = () => location.reload();
+  $("#pageTitle").classList.add("clickable");
   main.innerHTML = `
     <div class="page home-page">
       ${teacher ? `
@@ -141,6 +147,15 @@ function renderHome(main) {
       </a>
       <div class="mini-grid">${minis}</div>
     </div>`;
+
+  // 학생: 제출할 게 남은 메뉴(빛나다·동아리·심화탐구·교과) 오른쪽 위에 미제출 수 (첫 화면을 먼저 그리고 나중에 채움)
+  if (!teacher) {
+    programs.loadPendingPrograms().then(list => {
+      const n = {};
+      list.forEach(pr => { n[pr.category] = (n[pr.category] || 0) + 1; });
+      Object.keys(CATEGORIES).forEach(cat => programs.setPendingBadge(main.querySelector(`.mini-card[href="#/p/${cat}"]`), n[cat] || 0));
+    }).catch(err => console.warn("미제출 확인 실패", err));
+  }
 
   if (teacher) {
     // 이름·학번을 치고 Enter → 딱 한 명이면 그 학생 화면으로 바로, 여러 명(또는 0명)이면 검색 결과 화면.

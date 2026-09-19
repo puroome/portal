@@ -18,9 +18,9 @@ export async function renderGrades(main, { sid }, alive) {
     setTitle("📊 성적");
   }
 
-  const [scores, info, students] = await Promise.all([
+  // 업데이트 시각(info/lastUpdated)은 보여 주지 않음 (사용자 요청)
+  const [scores, students] = await Promise.all([
     readVal(`students/${sid}/scores`),
-    readVal("info/lastUpdated").catch(() => null),
     isTeacher() ? getStudents() : Promise.resolve(null)
   ]);
   if (!alive()) return;
@@ -29,11 +29,11 @@ export async function renderGrades(main, { sid }, alive) {
 
   main.innerHTML = `
     <div class="page grades">
+      ${isTeacher() ? `
       <div class="grade-head">
         <div><span class="student-name">${esc(st?.name || "")}</span> <span class="student-id">${esc(sid)}</span></div>
-        <div class="item-meta">${info ? "Update: " + esc(info) : ""}</div>
-      </div>
-      ${isTeacher() ? `<div class="btn-row"><a class="btn small ghost" href="#/student/${encodeURIComponent(sid)}">🧑‍🎓 학생별 모아보기</a></div>` : ""}
+        <a class="btn small primary" href="#/student/${encodeURIComponent(sid)}">🔗모아보기</a>
+      </div>` : ""}
       <div id="gradeTabs" class="tab-header"></div>
       <div id="gradeContent"></div>
     </div>`;
@@ -242,7 +242,10 @@ function openChart(title, labels, fullLabels, data, yMax, color) {
   modal({
     title,
     wide: true,
-    okText: "닫기",
+    okText: null,
+    closeX: true,        // 닫기 줄 대신 모서리 ✕
+    dismissible: true,   // 바깥을 누르면 닫힘
+    className: "chart-modal",
     html: '<div style="position:relative;height:300px;width:100%"><canvas id="trendChart"></canvas></div>',
     onOpen: box => {
       if (chart) chart.destroy();

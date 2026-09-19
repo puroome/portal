@@ -70,7 +70,7 @@ export async function renderAttendance(main, { mode = "today" } = {}, alive) {
 // 방과후·야간자율은 폴더 탭으로 고릅니다.
 const MODES = {
   today:  { head: "출석체크", desc: "" },
-  manage: { head: "반 관리", desc: "반을 눌러 이름·요일·명단을 고치거나 운영을 끝낼 수 있습니다." },
+  manage: { head: "반 관리", desc: "" },
   stats:  { head: "통계", desc: "개설된 모든 반의 출결 통계를 볼 수 있습니다." }
 };
 
@@ -87,7 +87,7 @@ async function renderTeacherList(main, mode, alive) {
 
   const headButtons = {
     today:  `<a class="btn small ghost" href="#/att/stats">📊 통계</a><a class="btn small ghost" href="#/att/manage">⚙️ 관리</a>`,
-    manage: `<button class="btn small primary" id="btnNewGroup">+ 새 반</button>`,
+    manage: `<button class="btn small primary add-btn" id="btnNewGroup" aria-label="새 반" title="새 반"><svg class="plus-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4.5v15M4.5 12h15"/></svg></button>`,
     stats:  ""
   }[mode];
 
@@ -309,8 +309,9 @@ function groupDialog(g, allGroups = []) {
     </div>`).join("");
 
   return modal({
-    title: isNew ? `+ 새 반 · ${ATT_TYPES[type].label}` : `⚙️ 반 관리 · ${esc(g.name || "")}`,
+    title: "",                    // 제목 줄 없이 (사용자 요청 — 공간만 차지)
     wide: true,
+    className: "att-group-modal",
     html: `
       ${night ? `
         <div class="field-row">
@@ -320,8 +321,7 @@ function groupDialog(g, allGroups = []) {
           <label class="field"><span>교시</span>
             <select id="gPeriod">${nightPeriods().map(k => `<option value="${k}" ${g.period === k ? "selected" : ""}>${ATT_PERIODS[k].label}</option>`).join("")}</select>
           </label>
-        </div>
-        <p class="item-meta">운영 요일은 시간표대로 자동입니다 — 자율1 월~금 · 자율2 월~목 · 8교시 금요일.</p>` : `
+        </div>` : `
         <div class="field-row">
           <label class="field"><span>반 이름</span><input id="gName" value="${esc(g.name || "")}" placeholder="예: 수학심화"></label>
           <label class="field"><span>학년도</span><input id="gYear" type="number" value="${esc(g.year || schoolYear())}"></label>
@@ -333,8 +333,7 @@ function groupDialog(g, allGroups = []) {
         <div class="btn-row" style="border-top:1px solid var(--line); padding-top:12px">
           <button type="button" class="btn small ghost" data-x="toggle">${g.active === false ? "▶️ 다시 운영" : "⏹ 운영 종료"}</button>
           <button type="button" class="btn small ghost danger" data-x="delete">🗑 삭제</button>
-        </div>`}
-      <p class="item-meta">${ATT_TYPES[type].label}는 ${type === "night" ? "모든 교사가 편집·출석체크할 수 있습니다." : "반을 등록한 교사만 편집·출석체크할 수 있습니다."} 시작 ${LATE_AFTER_MINUTES}분 뒤 체크인은 지각입니다.</p>`,
+        </div>`}`,
     okText: "저장",
     cancelText: "취소",
     onOpen: async (box, close) => {
@@ -659,7 +658,7 @@ async function openCodeDialog(group, date) {
 // ---------------- 교사: 통계 ----------------
 export async function renderGroupStats(main, { gid }, alive) {
   if (!isTeacher()) { go("#/att"); return; }
-  setTitle("📊 출결 통계", "#/att/stats");
+  setTitle("출석", "#/att/stats", 3);
   const [group, records, sessions, studentMap] = await Promise.all([
     readVal(`portal/att/groups/${gid}`), readVal(`portal/att/records/${gid}`), loadSessions(gid), null
   ]).then(async ([g, r, se]) => [g, r, se, await getStudentMap(g?.year || schoolYear())]);
@@ -677,7 +676,7 @@ export async function renderGroupStats(main, { gid }, alive) {
       </div>
       <div class="roll-bar">
         <input type="date" id="stFrom" value="${range.from}"> ~ <input type="date" id="stTo" value="${range.to}">
-        <button class="btn small ghost" id="btnStatCsv">CSV</button>
+        <button class="btn small ghost icon-only" id="btnStatCsv" aria-label="CSV 내려받기" title="CSV 내려받기"><svg class="dl-ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></svg></button>
       </div>
       <div id="statBody"></div>
     </div>`;

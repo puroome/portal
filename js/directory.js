@@ -4,6 +4,7 @@
 import { readVal } from "./firebase.js";
 import { sidCompare, schoolYear, esc } from "./ui.js";
 import { sidInYear } from "./years.js";
+import { PHOTO_BASE } from "./config.js";
 
 let usersCache = null;
 
@@ -86,12 +87,8 @@ export function classOptions(list, grade) {
 }
 
 // ---------------- 학생 사진 카드 (학생별 모아보기·성적확인 검색 결과 공용) ----------------
-// 사진 주소는 record 앱이 쓰던 students/{학번}/photo 를 그대로 읽습니다. (record 는 올해 학번 기준)
-const photoCache = new Map();
-function studentPhoto(sid) {
-  if (!photoCache.has(sid)) photoCache.set(sid, readVal(`students/${sid}/photo`).then(v => String(v || "")).catch(() => ""));
-  return photoCache.get(sid);
-}
+// 사진은 포털의 images/{학번}.jpg (DB 를 읽지 않음 — 이름 규칙으로 바로 만듦). 파일이 없으면 👤
+const studentPhoto = sid => Promise.resolve(sid ? `${PHOTO_BASE}${encodeURIComponent(sid)}.jpg` : "");
 
 // 사진 + 그 아래 "이름 (학번)". 사진은 그린 뒤 hydratePhotos 로 채웁니다.
 export function studentCard(s, href) {
@@ -103,7 +100,7 @@ export function studentCard(s, href) {
 }
 
 export function hydratePhotos(container) {
-  // data-photo-url 이 있으면 그 주소(졸업생), 없으면 students/{학번}/photo
+  // data-photo-url 이 있으면 그 주소(졸업생), 없으면 images/{학번}.jpg
   container.querySelectorAll("[data-photo-sid], [data-photo-url]").forEach(async box => {
     const url = box.dataset.photoUrl ?? await studentPhoto(box.dataset.photoSid);
     if (!url || !box.isConnected) return;

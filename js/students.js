@@ -1,6 +1,6 @@
 // 학생별 모아보기 (교사): 한 학생의 활동 자료 · 방과후/야자 출결 · 성적 바로가기
 import { isTeacher } from "./auth.js";
-import { CATEGORIES, ATT_TYPES, ATT_STATUS } from "./config.js";
+import { CATEGORIES, ATT_TYPES } from "./config.js";
 import { $, $$, esc, emptyState, sidCompare } from "./ui.js";
 import { setTitle, go } from "./nav.js";
 import { getStudents, getStudentSids, filterStudents, gradeOptions, classOptions, studentCard, hydratePhotos } from "./directory.js";
@@ -69,7 +69,7 @@ export async function renderProfile(main, { sid }, alive) {
       <div class="info-card profile-head">
         <div>
           <div class="hello-name">${esc(st.name)}</div>
-          <div class="item-meta">${esc(sid)}${st.grade ? ` · ${esc(st.grade)}학년 ${esc(st.cls)}반 ${esc(st.no)}번` : ""}</div>
+          <div class="item-meta">${esc(sid)}</div>
         </div>
         <div class="profile-actions">
           ${st.uid ? `<button class="btn small contact-memo" id="btnMemo">ℹ️ 메모<span class="memo-count" hidden></span></button>` : ""}
@@ -82,7 +82,7 @@ export async function renderProfile(main, { sid }, alive) {
       <div class="section-head"><h3>활동 자료 (${subs.length})</h3></div>
       <div class="chip-row">
         <button class="chip on" data-cat="">전체 ${subs.length}</button>
-        ${Object.entries(CATEGORIES).map(([k, c]) => `<button class="chip" data-cat="${k}">${c.icon} ${c.label} ${byCat[k]?.length || 0}</button>`).join("")}
+        ${Object.entries(CATEGORIES).map(([k, c]) => `<button class="chip" data-cat="${k}" title="${esc(c.label)}" aria-label="${esc(c.label)}">${c.icon} ${byCat[k]?.length || 0}</button>`).join("")}
       </div>
       <div id="profileSubs"></div>
 
@@ -90,9 +90,10 @@ export async function renderProfile(main, { sid }, alive) {
       <div class="card-list">
         ${att.length ? att.map(({ group, counts, dates }) => `
           <a class="item-card" href="#/att/g/${group.id}">
-            <div class="item-top"><span class="badge type-${group.type}">${esc(ATT_TYPES[group.type]?.label || "")}</span><span class="item-meta">${esc(group.year)}학년도 · ${esc(cardSchedule(group))}</span></div>
+            <div class="item-top"><span class="badge type-${group.type}">${esc(ATT_TYPES[group.type]?.label || "")}</span>${group.type === "night" ? "" : `<span class="item-meta">${esc(group.year)}학년도 · ${esc(cardSchedule(group))}</span>`}</div>
             <div class="item-title">${esc(group.name)}</div>
-            <div class="stat-line">${Object.entries(ATT_STATUS).map(([k, s]) => `<span>${s.label} <b>${counts[k]}</b></span>`).join("")}<span class="item-meta">운영 ${dates.length}일</span></div>
+            <!-- 출석 : 나온 날(출석+지각+조퇴) / 운영일 (결석 n) — 출석률 계산과 같은 기준 -->
+            <div class="stat-line">출석 : <b>${counts.present + counts.late + counts.early}</b> / ${dates.length} <span class="item-meta">(결석 ${counts.absent})</span></div>
           </a>`).join("") : emptyState("참여 중인 방과후·야간자율이 없습니다.")}
       </div>
     </div>`;

@@ -41,26 +41,43 @@ export async function bindMemberPicker(box, initial = {}, opts = {}) {
     return g && c ? students.filter(s => s.grade === g && s.cls === c) : [];
   };
 
+  // 차수: 반을 하나 고를 때마다 1차·2차·3차… (반마다 한 묶음). 이미 저장된 명단은 반 순서대로 묶습니다.
+  //   위(지금 반)  : "총 48명 (2차 23명 추가)"
+  //   아래(앞의 반): "1차 25명 확정" + 파란 버튼(누르면 빠짐) — 차수마다 따로
+  const keyOf = sid => { const s = byId[sid]; return s ? `${s.grade}-${s.cls}` : "?"; };
+  const curKey = () => fixed ? `${fixed.grade}-${fixed.cls}` : (gradeSel.value && classSel.value ? `${gradeSel.value}-${classSel.value}` : "");
+  const order = [...new Set([...selected].map(keyOf))].sort(sidCompare);
+  // 처음 고르는 반이면 차수에 넣고 true (다시 고른 반은 뺐던 학생을 되살리지 않도록 전체 켜기를 안 함)
+  const touch = () => { const k = curKey(); if (!k || order.includes(k)) return false; order.push(k); return true; };
+
   const draw = () => {
     const list = classStudents();
     listEl.innerHTML = list.length
       ? list.map(s => `<button type="button" class="member-toggle ${selected.has(s.sid) ? "on" : ""}" data-sid="${esc(s.sid)}">${esc(s.no)}. ${esc(s.name)}</button>`).join("")
-      : `<span class="item-meta">${fixed ? "그 학년 학생을 찾지 못했습니다." : "학년과 반을 고르면 학생 명단이 나옵니다."}</span>`;
-    countEl.textContent = `선택 ${selected.size}명${list.length ? ` / ${fixed ? `${fixed.grade}학년 ${fixed.cls}반` : "이 반"} ${list.length}명` : ""}`;
+      : fixed ? `<span class="item-meta">그 학년 학생을 찾지 못했습니다.</span>` : "";
 
-    // 지금 보고 있는 반 밖에서 선택된 학생도 확인·해제할 수 있게 따로 보여 줍니다.
-    const shown = new Set(list.map(s => s.sid));
-    const others = [...selected].filter(sid => !shown.has(sid)).sort(sidCompare);
-    chosenEl.innerHTML = others.length
-      ? `<div class="item-meta" style="margin:8px 0 4px">${fixed ? "다른 학년에서 선택됨" : "다른 반에서 선택됨"} ${others.length}명</div>
-         <div class="member-grid">${others.map(sid => `
-           <span class="member-chip"><span>${esc(sid)} ${esc(byId[sid]?.name || "")}</span><button type="button" data-remove="${esc(sid)}">✕</button></span>`).join("")}</div>`
-      : "";
+    // 학생이 남아 있는 묶음만 차수를 매깁니다(지금 반은 비어 있어도 번호를 줌)
+    const cur = curKey();
+    const inKey = {};
+    [...selected].forEach(sid => { (inKey[keyOf(sid)] ||= []).push(sid); });
+    const batches = order.filter(k => k === cur || inKey[k]?.length);
+    const nth = k => batches.indexOf(k) + 1;
+    countEl.textContent = cur
+      ? `총 ${selected.size}명 (${nth(cur)}차 ${inKey[cur]?.length || 0}명 추가)`
+      : `총 ${selected.size}명`;
+
+    // 지금 보고 있는 반 밖에서 확정된 학생: 차수마다 따로, 위의 선택 버튼과 같은 파란 채움(누르면 빠짐)
+    chosenEl.innerHTML = batches.filter(k => k !== cur).map(k => {
+      const sids = inKey[k].slice().sort(sidCompare);
+      return `<div class="item-meta" style="margin:8px 0 4px">${nth(k)}차 ${sids.length}명 확정</div>
+        <div class="member-grid">${sids.map(sid => `
+          <button type="button" class="member-toggle on" data-remove="${esc(sid)}" title="눌러서 빼기">${esc(sid)} ${esc(byId[sid]?.name || "")}</button>`).join("")}</div>`;
+    }).join("");
   };
 
   const addAllOfClass = () => classStudents().forEach(s => selected.add(s.sid));
 
-  classSel.onchange = () => { if (defaultOn) addAllOfClass(); draw(); };   // 기본은 반 전체를 넣고 시작
+  classSel.onchange = () => { if (touch() && defaultOn) addAllOfClass(); draw(); };   // 기본은 반 전체를 넣고 시작
   gradeSel.onchange = () => {
     classSel.innerHTML = `<option value="">반</option>` + classOptions(students, gradeSel.value).map(c => `<option>${c}</option>`).join("");
     draw();
@@ -79,6 +96,7 @@ export async function bindMemberPicker(box, initial = {}, opts = {}) {
     draw();
   };
 
+  touch();
   draw();
   return {
     get: () => (selected.size ? Object.fromEntries([...selected].map(sid => [sid, true])) : null),
@@ -87,6 +105,7 @@ export async function bindMemberPicker(box, initial = {}, opts = {}) {
     setFixedClass: (grade, cls, { selectAll = true, clear = true } = {}) => {
       if (clear) classStudents().forEach(s => selected.delete(s.sid));
       fixed = { grade, cls };
+      touch();
       if (selectAll) addAllOfClass();
       draw();
     }

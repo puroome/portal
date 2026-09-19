@@ -1,6 +1,6 @@
 {
-  "name": "광남고 포털",
-  "short_name": "포털",
+  "name": "광장",
+  "short_name": "광장",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",

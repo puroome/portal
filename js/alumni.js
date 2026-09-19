@@ -19,8 +19,8 @@ function toAlumnus(u) {
     uid: u.uid, year, sid, name: u.name || "",
     cls: String(u.cls || est.cls || ""), no: String(u.no || est.no || ""),
     phone: String(u.phone || "").replace(/[^0-9]/g, ""),
-    // 사진은 record 앱과 같은 규칙: images/old/{졸업연도}_{3학년 학번}.jpg
-    photo: u.photo || (sid ? `${GRAD_PHOTO_BASE}${year}_${sid}.jpg` : "")
+    // 사진: 포털 images/old/{졸업연도}_{3학년 학번}.jpg (예전 record 주소가 DB 에 남아 있어도 쓰지 않음)
+    photo: sid ? `${GRAD_PHOTO_BASE}${year}_${sid}.jpg` : ""
   };
 }
 

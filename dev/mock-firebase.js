@@ -46,16 +46,26 @@
       notices: {
         n1: { title: "2학기 방과후 수강 신청 안내", content: "9월 25일까지 담임 선생님께 신청서를 내 주세요.\n자세한 안내: https://example.com/afterschool", startDate: dd(-3), endDate: dd(6), createdBy: "김교사", createdByUid: "uT1", createdAt: now - 3e8 },
         n2: { title: "내일 체육복 등교", content: "체육한마당 연습이 있습니다.", startDate: dd(0), endDate: dd(1), createdBy: "박교사", createdByUid: "uT2", createdAt: now - 1e8 },
+        n5: { title: "3학년 수능 원서 접수", content: "3학년만 보이는 공지", startDate: dd(-1), endDate: dd(3), grades: { "3": true }, createdBy: "김교사", createdByUid: "uT1", createdAt: now - 2e8 },
+        n6: { title: "1·2학년 체험학습 안내", content: "1·2학년 공지", startDate: dd(-1), endDate: dd(4), grades: { "1": true, "2": true }, createdBy: "김교사", createdByUid: "uT1", createdAt: now - 2e8 },
+        n7: { title: "영어 과제 안내 (내 담당)", content: "공통영어2 명단만", startDate: dd(-1), endDate: dd(2), grades: null, programId: "p4", programTitle: "공통영어2 과제", createdBy: "김교사", createdByUid: "uT1", createdAt: now - 1e8 },
+        n8: { title: "작년 빛나다 명단 공지", content: "10101 은 명단에 없음", startDate: dd(-1), endDate: dd(2), grades: null, programId: "p25", programTitle: "작년 빛나다 (2025)", createdBy: "김교사", createdByUid: "uT1", createdAt: now - 1e8 },
         n3: { title: "중간고사 시험 범위 공지", content: "", startDate: dd(5), endDate: dd(12), createdBy: "김교사", createdByUid: "uT1", createdAt: now - 5e7 },
         n4: { title: "1학기 도서 반납", content: "지난 공지", startDate: dd(-40), endDate: dd(-30), createdBy: "박교사", createdByUid: "uT2", createdAt: now - 9e9 }
       },
       programs: {
-        p1: { category: "club", year: 2026, title: "로봇공학 동아리 (김교사·비공개)", description: "그날 활동을 적어 주세요.", allowFiles: true, closed: false, private: true, members: { "10101": true, "10102": true }, createdBy: "김교사", createdByUid: "uT1", createdAt: now - 5e8 },
-        p2: { category: "bitnada", year: 2026, title: "빛나다 진로탐색 (박교사·공통)", allowFiles: true, private: false, days: { 5: true }, members: { "10101": true, "10102": true }, createdBy: "박교사", createdByUid: "uT2", createdAt: now - 4e8 },
+        p1: { category: "club", year: 2026, title: "로봇공학 동아리 (김교사·비공개)", description: "그날 활동을 적어 주세요.", closed: false, private: true, freeLog: true, v2: true, members: { "10101": true, "10102": true }, createdBy: "김교사", createdByUid: "uT1", createdAt: now - 5e8,
+              assignments: { a1: { title: "1학기 결과물", startDate: "2026-07-01", endDate: "2026-07-10", allowFiles: true }, a2: { title: "동아리 소감문", startDate: "2026-12-01", endDate: "2026-12-15", allowFiles: false } } },
+        p2: { category: "bitnada", year: 2026, title: "빛나다 진로탐색 (박교사·공통)", private: false, v2: true, days: { 5: true }, members: { "10101": true, "10102": true }, createdBy: "박교사", createdByUid: "uT2", createdAt: now - 4e8,
+              assignments: { a1: { title: "진로 탐색 소감문", startDate: dd(0), endDate: dd(0), allowFiles: false } } },
         p25: { category: "bitnada", year: 2025, title: "작년 빛나다 (2025)", allowFiles: true, members: { "10103": true, "30101": true }, createdBy: "김교사", createdByUid: "uT1", createdAt: now - 3e10 },
+        p4: { category: "subject", subjectGroup: "eng", year: 2026, title: "공통영어2 1-3반", private: true, v2: true, assignments: { a1: { title: "Unit 3 에세이", startDate: dd(-2), endDate: dd(5), allowFiles: true }, a2: { title: "단어 퀴즈 오답노트", startDate: dd(-14), endDate: dd(-10), allowFiles: true } }, members: { "10101": true }, createdBy: "김교사", createdByUid: "uT1", createdAt: now - 2e8 },
+        p5: { category: "subject", subjectGroup: "soc", year: 2026, title: "통합사회2 과제", private: true, v2: true, assignments: { a1: { title: "지역 조사 보고서", startDate: dd(-2), endDate: dd(5), allowFiles: true } }, members: { "10101": true }, createdBy: "박교사", createdByUid: "uT2", createdAt: now - 2e8 },
+        p6: { category: "subject", subjectGroup: "arts", year: 2026, title: "미술감상과 이해", private: true, v2: true, assignments: { a1: { title: "감상문", startDate: dd(-2), endDate: dd(5), allowFiles: true } }, members: { "10101": true }, createdBy: "박교사", createdByUid: "uT2", createdAt: now - 2e8 },
         p3: { category: "contest", year: 2026, title: "심화탐구대회 (김교사)", allowFiles: true, private: false, startDate: "2026-09-01", endDate: "2026-09-30", members: { "10101": true }, createdBy: "김교사", createdByUid: "uT1", createdAt: now - 3e8 }
       },
       submissions: {
+        p6: { "10101": { s6: { programId: "p6", assignmentId: "a1", category: "subject", year: 2026, sid: "10101", name: "홍길동", grade: "1", cls: "1", no: "1", title: "감상문", content: "제출함", createdAt: now - 1e7, updatedAt: now - 1e7 } } },
         p1: { "10102": { s1: { programId: "p1", category: "club", year: 2026, sid: "10102", name: "김철수", grade: "1", cls: "1", no: "2", title: "라인트레이서", content: "PID 제어", createdAt: now - 3e8, updatedAt: now - 3e8 } } },
         p25: {
           "10103": { old1: { programId: "p25", category: "bitnada", year: 2025, sid: "10103", name: "박민수", grade: "1", cls: "1", no: "3", title: "1학년 때 진로 탐색", content: "작년 기록", createdAt: now - 3e10, updatedAt: now - 3e10 } },
