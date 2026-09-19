@@ -321,25 +321,28 @@ async function renderTeacherCategory(main, cat, alive, group = null) {
 const subHash = s => `#/sub/${s.programId}/${encodeURIComponent(s.sid)}/${s.id}`;
 
 // 제출자료 목록 (교사 검색 결과·학생 프로필에서 공용)
+// view: "list" | "student"(학생별 묶음) | "profile"(학생 정보 화면 — 위에 학생이 이미 있어 학번·이름 줄 없음)
 export function renderSubmissionList(container, subs, programsById, view = "list") {
   if (!subs.length) { container.innerHTML = emptyState("조건에 맞는 제출 자료가 없습니다."); return; }
-  const itemHtml = (s, full) => {
+  const itemHtml = (s, full, who = true) => {
     const pr = programsById[s.programId];
     const cat = CATEGORIES[s.category];
     const task = pr && s.assignmentId ? pr.assignments?.[s.assignmentId] : null;
     return `
       <a class="sub-row" href="${subHash(s)}">
         <div class="sub-row-top">
-          <span class="who">${esc(s.sid)} ${esc(s.name)}</span>
+          ${who ? `<span class="who">${esc(s.sid)} ${esc(s.name)}</span>` : ""}
           <span class="prog">${cat ? cat.icon : ""} ${esc(pr ? pr.title : "(삭제된 프로그램)")}${pr ? ` · ${esc(task ? task.title : "자유 기록")}` : ""}</span>
           <span class="date">${fmtDateTime(s.updatedAt || s.createdAt).slice(0, 10)}</span>
         </div>
-        <div class="sub-row-title">${esc(s.title)}${s.files?.length ? ` <span class="clip">📎${s.files.length}</span>` : ""}${s.feedback ? ` <span class="clip">💬</span>` : ""}</div>
+        <div class="sub-row-title">${esc(s.title)}${s.files?.length ? ` <span class="clip">🍒${s.files.length}</span>` : ""}${s.feedback ? ` <span class="clip">💬</span>` : ""}</div>
         <div class="sub-row-content ${full ? "full" : ""}">${full ? richText(s.content) : esc(s.content)}</div>
       </a>`;
   };
 
-  if (view === "student") {
+  if (view === "profile") {
+    container.innerHTML = `<div class="student-group">${subs.map(s => itemHtml(s, true, false)).join("")}</div>`;
+  } else if (view === "student") {
     const groups = {};
     subs.forEach(s => { (groups[s.sid] ||= []).push(s); });
     container.innerHTML = Object.keys(groups).sort(sidCompare).map(sid => {
