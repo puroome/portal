@@ -249,6 +249,7 @@ resetSelectedPasswords, moveOutSelected, listPortalOwners, deletePortalDataByOwn
   프로그램 상세(#/prog/:pid)는 교사면 관리 목록에서 오므로 3(<<<, 뒤로 = #/p/{cat}/manage), 학생이면 2. 반별 통계 제목은 "출석".
 - (2026-09-20) 앱 이름 **"광장"** (config APP_NAME·title·manifest·로그인). 한자 "光場"+붓글씨체·favicon 없앰은 해 봤다가 사용자가 안 어울린다고 되돌림 — favicon 유지. 이름 글꼴은 후보 21개 중 사용자가 고른 **Gowun Dodum**(`.app-name`, Google Fonts `text=광장` 두 글자만).
 - (2026-09-20) 앱 전체 글꼴 비교용 `dev/font-compare.html`(목업 앱을 iframe 5개로 띄워 폰트만 바꿔 넣음 · 화면 버튼 7개). 후보: Noto Sans KR(예전)·Pretendard·SUIT·Spoqa Han Sans Neo·IBM Plex Sans KR → 사용자가 **SUIT**(jsdelivr `SUIT-Variable.css`, family `SUIT Variable`) 선택, 앱 전체 적용. Noto Sans KR 링크는 뺌.
+- (2026-09-20) **학생 출석 반 화면**(attendance.js renderStudentGroup): 후보 5개 중 1안 — 프로그램 반 화면 틀(`.prog-shell att-{type}`). `오늘 출석` 코드 입력칸을 바로(창 없음, **세로선 없음** — 사용자 지정), 기록되면 "오늘 ○○ 기록됨 (시각)", 운영일 아니면 안내. `나의 출결` = 숫자 4개 + 지각·조퇴·결석 날짜 카드(세로선). 예전 checkinDialog·myAttendanceDialog 창은 없앰.
 - (2026-09-20) 공지 목록 `#/notice` 맨 위 `완료/예정 공지 포함` 체크(`#ntShowAll`, 기본 해제 = 진행 중만). 체크하면 예정·지난 공지 칸(`.nt-extra`)이 보임. 관리 화면엔 없음.
 - 공지 카드를 눌러도 **상세 창은 어디서도 안 뜬다**(관리·목록 모두, 사용자가 두 번 요청 — 다시 만들지 말 것). 대신 카드에 내용 전부(링크 포함)를 보여 준다. 출석 반 만들기·관리 창은 제목 줄·설명 문구·명단 개수 없음
   (`.att-group-modal`), 출석 관리 화면 설명 문구도 없앰. "다른 반에서 선택됨 n명"은 정보라 남김.

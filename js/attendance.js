@@ -762,56 +762,104 @@ async function renderStudentList(main, alive) {
     </div>`;
 }
 
+// 학생 반 화면 (2026-09-20 사용자 선택 1안): 활동 프로그램 반 화면과 같은 틀(.prog-shell)
+//   오늘 출석 = 코드 입력칸을 바로 보여 줌(창 없음, 세로선 없음) · 나의 출결 = 숫자 4개 + 지각·조퇴·결석 날짜(세로선 카드)
 async function renderStudentGroup(main, group, alive) {
   setTitle(group.name, "#/att");
   const sid = mySidIn(group);
   if (!sid || !group.members?.[sid]) { main.innerHTML = emptyState("이 반 명단에 없습니다."); return; }
   const now = isNowGroup(group);
+  const date = dateKey();
 
   main.innerHTML = `
     <div class="page">
-      <div class="info-card">
-        <div class="item-top">
-          <span class="badge type-${group.type}">${esc(ATT_TYPES[group.type]?.label || "")}</span>
-          ${now ? (runsOn(group) ? '<span class="badge st-open">오늘 운영</span>' : "") : `<span class="badge st-closed">${esc(group.year || "")}학년도</span>`}
-          <span class="item-meta">${esc(cardSchedule(group))}</span>
+      <div class="prog-shell att-${esc(group.type)}">
+        <div class="prog-head">
+          <div class="item-top">
+            <span class="badge type-${group.type}">${esc(ATT_TYPES[group.type]?.label || "")}</span>
+            ${now ? (runsOn(group) ? '<span class="badge st-open">오늘 운영</span>' : "") : `<span class="badge st-closed">${esc(group.year || "")}학년도</span>`}
+            <span class="item-meta">${esc(cardSchedule(group))}</span>
+          </div>
+          <h2 class="prog-title">${esc(group.name)}</h2>
         </div>
-        <h2 class="info-title">${esc(group.name)}</h2>
-      </div>
-      ${now ? "" : `<p class="page-desc">지난 학년도(${esc(group.year || "")}) 반입니다. 출결 기록만 볼 수 있습니다.</p>`}
-      <div class="menu-grid">
-        ${now ? `
-        <button class="menu-card" id="btnCheckin" style="--accent:#34a853">
-          <span class="menu-icon">✅</span><span class="menu-label">출석하기</span>
-          <span class="menu-desc">선생님이 불러 주는 코드 입력</span>
-        </button>` : ""}
-        <button class="menu-card" id="btnMine" style="--accent:#4285f4">
-          <span class="menu-icon">📖</span><span class="menu-label">나의 출결</span>
-          <span class="menu-desc">지각·조퇴·결석 확인</span>
-        </button>
+        <div class="prog-body">
+          ${now ? `<div class="task-head">오늘 출석</div><div id="ciBox" class="ci-box"></div>`
+                : `<p class="item-meta">지난 학년도(${esc(group.year || "")}) 반입니다. 출결 기록만 볼 수 있습니다.</p>`}
+          <div class="task-head ci-mine-head">나의 출결 <span class="item-meta" id="mineDays"></span></div>
+          <div class="task-rail" id="mineBox"><div class="task-empty">불러오는 중…</div></div>
+        </div>
       </div>
     </div>`;
 
-  $("#btnCheckin", main)?.addEventListener("click", () => checkinDialog(group));
-  $("#btnMine", main).onclick = () => myAttendanceDialog(group, sid);
-}
+  const draw = async () => {
+    const [records, sessions] = await Promise.all([readVal(`portal/att/records/${group.id}/${sid}`), loadSessions(group.id)]);
+    if (!alive()) return;
+    const dates = sessionDates(sessions);
+    const counts = countStatuses(records, group, dates);
+    const problems = dates.filter(d => effectiveStatus(records?.[d], group, d) !== "present").sort().reverse();
 
-function checkinDialog(group) {
-  const date = dateKey();
-  return modal({
-    title: `${group.name} 출석하기`,
-    html: `<p>선생님이 알려 주는 4자리 코드를 입력하세요.</p>
-           <input id="ciCode" class="code-input" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="0000">`,
-    okText: "출석", cancelText: "취소",
-    onOpen: box => setTimeout(() => $("#ciCode", box).focus(), 50),
-    beforeOk: async box => {
-      const code = $("#ciCode", box).value.trim();
-      if (!/^\d{4}$/.test(code)) throw new Error("4자리 숫자를 입력하세요.");
-      const at = await doCheckin(group, date, code);
-      const late = isLate(at, group, date);
-      alertBox("출석완료", late ? "✅ 출석완료<br><b style='color:#f9ab00'>지각입니다.</b>" : "✅ 출석완료");
+    // 오늘 출석 칸: 운영일 아님 / 이미 기록됨 / 코드 입력
+    const box = $("#ciBox", main);
+    if (box) {
+      const rec = records?.[date];
+      if (rec) {
+        const st = rec.status === "present" && isLate(rec.at, group, date) ? "late" : rec.status;
+        box.innerHTML = `<div class="ci-done">오늘 ${esc(ATT_STATUS[st]?.label || "출결")} 기록됨 ${rec.at ? `<span class="item-meta">(${fmtTime(rec.at)})</span>` : ""}</div>`;
+      } else if (!runsOn(group)) {
+        box.innerHTML = `<div class="task-empty">오늘은 운영하는 날이 아닙니다.</div>`;
+      } else {
+        box.innerHTML = `
+          <form class="ci-form" id="ciForm">
+            <!-- 4칸 코드: 보이는 칸 4개 위에 투명한 입력칸 하나를 겹침 -->
+            <label class="ci-otp">
+              ${[0, 1, 2, 3].map(i => `<span class="ci-cell" data-i="${i}"></span>`).join("")}
+              <input id="ciCode" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="one-time-code" aria-label="출석 코드 4자리">
+            </label>
+            <button class="btn primary" id="ciBtn">출석</button>
+          </form>`;
+        const input = $("#ciCode", box);
+        const paint = () => {
+          input.value = input.value.replace(/\D/g, "").slice(0, 4);
+          const v = input.value, focused = document.activeElement === input;
+          $$(".ci-cell", box).forEach((c, i) => {
+            c.textContent = v[i] || "";
+            c.classList.toggle("filled", !!v[i]);
+            c.classList.toggle("active", focused && i === Math.min(v.length, 3));
+          });
+        };
+        input.addEventListener("input", paint);
+        input.addEventListener("focus", paint);
+        input.addEventListener("blur", paint);
+        paint();
+        $("#ciForm", box).onsubmit = async e => {
+          e.preventDefault();
+          const code = $("#ciCode", box).value.trim();
+          if (!/^\d{4}$/.test(code)) { toast("4자리 숫자를 입력하세요."); return; }
+          const btn = $("#ciBtn", box);
+          btn.disabled = true;
+          try {
+            const at = await doCheckin(group, date, code);
+            alertBox("출석완료", isLate(at, group, date) ? "✅ 출석완료<br><b style='color:#f9ab00'>지각입니다.</b>" : "✅ 출석완료");
+            draw();
+          } catch (err) {
+            toast(err.message || "출석하지 못했습니다.");
+            btn.disabled = false;
+          }
+        };
+      }
     }
-  });
+
+    $("#mineDays", main).textContent = `운영 ${dates.length}일`;
+    $("#mineBox", main).innerHTML = `
+      <div class="task-card"><div class="ci-stats">${Object.entries(ATT_STATUS).map(([k, s]) =>
+        `<span style="color:${s.color}"><b>${counts[k]}</b>${s.label}</span>`).join("")}</div></div>
+      ${problems.length ? problems.map(d => {
+        const rec = records?.[d];
+        return `<div class="task-card"><div class="task-line" style="margin-top:0"><span>${fmtDateKey(d)}${rec?.at ? ` ${fmtTime(rec.at)}` : ""}</span>${statusChip(effectiveStatus(rec, group, d))}</div>
+                ${rec?.note ? `<div class="task-desc">${esc(rec.note)}</div>` : ""}</div>`;
+      }).join("") : `<div class="task-empty">지각·조퇴·결석 기록이 없습니다. 👍</div>`}`;
+  };
+  await draw();
 }
 
 async function doCheckin(group, date, code) {
@@ -825,25 +873,6 @@ async function doCheckin(group, date, code) {
     throw new Error("코드가 틀렸거나 만료되었습니다. 선생님께 확인하세요.");
   }
   return (await readVal(path))?.at || serverNow();
-}
-
-async function myAttendanceDialog(group, sid) {
-  const [records, sessions] = await Promise.all([readVal(`portal/att/records/${group.id}/${sid}`), loadSessions(group.id)]);
-  const dates = sessionDates(sessions);
-  const counts = countStatuses(records, group, dates);
-  const problems = dates.filter(d => effectiveStatus(records?.[d], group, d) !== "present");
-
-  modal({
-    title: `${group.name} 나의 출결`,
-    html: `
-      <div class="stat-line">${Object.entries(ATT_STATUS).map(([k, s]) => `<span style="color:${s.color}">${s.label} <b>${counts[k]}</b></span>`).join("")}</div>
-      <p class="item-meta">감독교사 확인이 된 운영일 ${dates.length}일 기준입니다.</p>
-      ${problems.length ? problems.map(d => {
-        const rec = records?.[d];
-        return `<div class="history-row"><span>${fmtDateKey(d)}</span><span>${fmtTime(rec?.at)}</span>${statusChip(effectiveStatus(rec, group, d))}</div>
-                ${rec?.note ? `<div class="item-meta right">${esc(rec.note)}</div>` : ""}`;
-      }).join("") : `<p>지각·조퇴·결석 기록이 없습니다. 👍</p>`}`
-  });
 }
 
 // 학생별 모아보기(교사)용 요약. person = { sid, sids } — 반마다 그 해 학번으로 찾습니다.

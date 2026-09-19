@@ -36,7 +36,7 @@ function dueText(n, today = dateKey()) {
 }
 function stateBadge(n) {
   const st = noticeState(n);
-  if (st === "active") return `<span class="badge nt-on">진행 중 · ${dueText(n)}</span>`;
+  if (st === "active") return `<span class="badge nt-on">${dueText(n)}</span>`;
   if (st === "soon") return `<span class="badge nt-soon">예정</span>`;
   return `<span class="badge nt-off">종료</span>`;
 }
